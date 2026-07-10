@@ -48,7 +48,7 @@ npm install
 ```bash
 npx supabase login
 npx supabase link --project-ref <tu-project-ref>   # está en la URL del dashboard
-npx supabase db push                                # aplica supabase/migrations/*.sql en orden (0001 a 0004)
+npx supabase db push                                # aplica supabase/migrations/*.sql en orden (0001 a 0005)
 ```
 
 El seed (`supabase/seed.sql`) no corre automáticamente con `db push`. Aplicalo
@@ -63,16 +63,19 @@ npx supabase db execute -f supabase/seed.sql --linked
 1. Abrí **SQL Editor → New query**.
 2. Pegá y ejecutá, en orden y cada uno en una query separada, el contenido de
    `supabase/migrations/0001_init.sql`, `0002_ncm_catalog.sql`,
-   `0003_documents_checklist_admin.sql` y `0004_formal_quotes.sql`.
+   `0003_documents_checklist_admin.sql`, `0004_formal_quotes.sql` y
+   `0005_integrations.sql`.
 3. En una última query, pegá y ejecutá `supabase/seed.sql`.
 
 Verificá que haya funcionado: **Table Editor** debería mostrar las tablas de
-las cuatro migraciones (`profiles`, `companies`, `simulations`,
+las cinco migraciones (`profiles`, `companies`, `simulations`,
 `simulation_items`, `ncm_positions`, `tax_parameters`, `logistic_costs`,
 `documents`, `pjm_requests`, `comments`, `simulation_checklist_items`,
 `audit_logs`, `notifications`, `formal_quotes`, `formal_quote_items`,
-`formal_quote_costs`, `quote_sequences`, entre otras) y `ncm_positions`/
-`tax_parameters` deberían tener 7 filas cada una tras el seed.
+`formal_quote_costs`, `quote_sequences`, `feature_flags`,
+`exchange_rates`, `regulatory_references`, `integration_logs`, entre
+otras) y `ncm_positions`/`tax_parameters` deberían tener 7 filas cada una
+tras el seed.
 
 ### 4. Configurar `.env.local`
 
@@ -80,17 +83,20 @@ las cuatro migraciones (`profiles`, `companies`, `simulations`,
 cp .env.example .env.local
 ```
 
-Completá los tres valores del paso 2:
+Completá los tres valores del paso 2, más un `CRON_SECRET` propio para
+correr las rutas `/api/cron/*` en local:
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=https://<tu-project-ref>.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon public key>
 SUPABASE_SERVICE_ROLE_KEY=<service role key>
+CRON_SECRET=<cualquier string largo, ej. salida de `openssl rand -hex 24`>
 ```
 
 `.env.local` está en `.gitignore` — nunca se commitea. `SUPABASE_SERVICE_ROLE_KEY`
-sólo la usan scripts locales (`scripts/seed-demo-users.mjs`) y nunca se envía
-al navegador.
+la usan scripts locales (`scripts/seed-demo-users.mjs`) y las rutas
+`/api/cron/*` (para poder actualizar `formal_quotes`/`documents` sin pasar
+por RLS); ninguna de las dos se envía al navegador.
 
 ### 5. Correr localmente
 
@@ -178,14 +184,16 @@ src/
     simulaciones/[id]/        Resultado / detalle de simulación
     simulaciones/[id]/pdf/    PDF preliminar (imprimible)
     simulaciones/[id]/cotizacion/pdf/   PDF comercial de la cotización formal (imprimible)
-    admin/                    Panel interno PJM (solicitudes, usuarios, empresas, catálogo NCM)
+    admin/                    Panel interno PJM (solicitudes, usuarios, empresas, catálogo NCM, integraciones)
     admin/solicitudes/[id]/   Detalle de solicitud PJM (resumen, documentos, checklist, cotización, comentarios)
-    actions/                  Server Actions (auth, company, simulations, admin, ncm, documents, checklist, comments, notifications, quotes)
+    admin/integraciones/      Health center: feature flags, tipo de cambio BNA, referencias BCRA/VUCE, logs
+    api/cron/                 Rutas de cron protegidas por CRON_SECRET (expirar cotizaciones/documentos)
+    actions/                  Server Actions (auth, company, simulations, admin, ncm, documents, checklist, comments, notifications, quotes, integrations)
   components/
     layout/                   Header (incluye NotificationsBell), Footer
     ui/                       Primitivas (Card, Button, Field, Badge)
     simulation/                Pasos del wizard, tarjetas de resultado, SimulationDetailTabs
-    admin/                    Controles del panel PJM (estados, comentarios, importador, validación NCM, AdminRequestDetailTabs)
+    admin/                    Controles del panel PJM (estados, comentarios, importador, validación NCM, AdminRequestDetailTabs, feature flags, tipo de cambio, referencias)
     ncm/                      Buscador NCM, tarjetas de detalle/tributos/intervenciones (cliente y admin)
     documents/                Carga, listado y revisión de documentos (cliente y admin)
     checklist/                Checklist de documentación con semáforo (cliente y admin)
@@ -195,30 +203,35 @@ src/
   lib/
     calculations/              Motor de cálculo (puro, sin UI) + tests
     ncm/                       Normalización/búsqueda/match de NCM, tributos e intervenciones; parseo CSV + tests
+    integrations/               Adapters de notificación saliente (email/whatsapp/webhook) con fallback a consola/log
     supabase/                  Clientes de Supabase (browser/server/service-role) + sesión de proxy
     constants/                 Ubicaciones, tarifas de referencia, catálogo NCM de ejemplo (fallback), estilos de estado, checklist por defecto
     validations/                Esquemas Zod
     checklist.ts                Cálculo puro del semáforo de checklist + tests
     readyForQuote.ts             Cálculo puro de bloqueos para "listo para cotización" + tests
     quoteTotals.ts                Cálculo puro de subtotal/impuestos/total de una cotización + tests
+    cron.ts                      Verificación del header Authorization de los cron jobs + tests
     auditLog.ts                  Helper de auditoría (service-role, no lanza errores)
-    notify.ts                    Helper de notificaciones in-app (service-role, no lanza errores)
+    notify.ts                    Helper de notificaciones in-app + fan-out al adapter de email (service-role, no lanza errores)
     dal.ts                     Data Access Layer (verificación de sesión/rol)
     errorMessages.ts           Traducción de errores de Supabase a mensajes cortos en español
-  types/                      Tipos de dominio y de la base de datos (incluye documents.ts y quotes.ts)
+  types/                      Tipos de dominio y de la base de datos (incluye documents.ts, quotes.ts e integrations.ts)
   proxy.ts                    Protección de rutas + refresco de sesión (ex-middleware.ts)
 supabase/
   migrations/0001_init.sql    Esquema base + RLS + índices
   migrations/0002_ncm_catalog.sql   Catálogo NCM/tributos/intervenciones versionado + RLS (Sprint 2)
   migrations/0003_documents_checklist_admin.sql   Documentos, checklist, comentarios, auditoría, notificaciones + RLS (Sprint 3)
   migrations/0004_formal_quotes.sql   Cotización comercial formal, numeración, RLS (Sprint 4)
+  migrations/0005_integrations.sql   Feature flags, tipo de cambio, referencias regulatorias, logs de integración + RLS (Sprint 5)
   seed.sql                    Catálogo NCM y parámetros de impuestos de ejemplo (fallback)
 scripts/
   seed-demo-users.mjs         Crea usuarios cliente/admin_pjm de prueba vía Admin API
+vercel.json                   Configuración de los cron jobs (expirar cotizaciones/documentos)
 QA_CHECKLIST.md               Checklist de pruebas manuales Sprint 1 / 1.5
 SPRINT_2_QA.md                Checklist de pruebas manuales Sprint 2 (NCM/tributos/intervenciones)
 SPRINT_3_QA.md                Checklist de pruebas manuales Sprint 3 (documentos/checklist/panel PJM)
 SPRINT_4_QA.md                Checklist de pruebas manuales Sprint 4 (cotización comercial formal)
+SPRINT_5_QA.md                Checklist de pruebas manuales Sprint 5 (integraciones, feature flags, health center)
 ```
 
 ## Modelo de datos
@@ -387,6 +400,45 @@ cotización comercial (distinta de la simulación preliminar y de la
   de renderizado de PDF. Ver "Decisión de alcance: PDF" en
   `SPRINT_4_QA.md`.
 
+## Integraciones y health center (Sprint 5)
+
+`supabase/migrations/0005_integrations.sql` agrega la superficie de
+integración externa del MVP — sin conectar ningún proveedor real todavía —
+más un panel para operarla desde `/admin/integraciones`.
+
+- **Feature flags** (`feature_flags`): tres interruptores
+  (`email_notifications`, `whatsapp_notifications`, `webhook_notifications`),
+  todos apagados por defecto, editables desde el health center.
+- **Adapters con fallback** (`src/lib/integrations/dispatch.ts`): no hay
+  credenciales de ningún proveedor de email/WhatsApp/webhooks en este MVP.
+  Cuando un canal está habilitado, `dispatchIntegration()` cae a
+  `console.log` como stand-in del envío real y deja registro en
+  `integration_logs`; cuando está deshabilitado, queda como `skipped` sin
+  intentar nada. `notifyUser`/`notifyAllAdmins` (`src/lib/notify.ts`) ya
+  disparan el canal `email` en paralelo a la notificación in-app existente
+  desde Sprint 3, así que cualquier evento notificable (documento subido,
+  cotización emitida, etc.) también deja rastro en el health center.
+- **BNA — tipo de cambio manual** (`exchange_rates`): un admin carga
+  compra/venta por fecha y moneda desde el health center; al armar un
+  borrador de cotización formal, un botón permite fijar
+  `formal_quotes.exchange_rate` con el último valor cargado — queda
+  congelado (snapshot) una vez que la cotización deja de ser `draft`.
+- **BCRA / VUCE — referencias** (`regulatory_references`): carga y
+  desactivación manual de referencias regulatorias (norma, NCM opcional,
+  URL, descripción); un cliente sólo puede leer las que están `is_active`.
+- **ARCA**: no hay un módulo nuevo — reutiliza el importador de catálogo
+  NCM del Sprint 2 (`/admin/ncm`), que ya soporta marcar la fuente del lote
+  importado.
+- **Cron jobs** (`/api/cron/expire-formal-quotes`,
+  `/api/cron/expire-documents`): protegidos por `CRON_SECRET`
+  (`src/lib/cron.ts`, con tests) contra el header `Authorization: Bearer`
+  que Vercel agrega automáticamente a las invocaciones programadas en
+  `vercel.json`. Vencen cotizaciones `issued` con `valid_until` pasado y
+  documentos con `expires_at` pasado (columna nueva en `documents`).
+- Ver "Decisiones de alcance de este sprint" al final de `SPRINT_5_QA.md`
+  para el detalle de qué quedó deliberadamente fuera (proveedores reales,
+  scraping, tablas separadas por canal).
+
 ## Cálculos
 
 Todo vive en `src/lib/calculations/importCostCalculator.ts` (funciones puras,
@@ -427,8 +479,9 @@ sin dependencias de Supabase): normalización y búsqueda de NCM, match de
 tributos/intervenciones, parseo/validación de los importadores CSV, el
 motor de cálculo (`src/lib/calculations/importCostCalculator.ts`), el
 semáforo de checklist y los bloqueos de "listo para cotización"
-(`src/lib/checklist.ts`, `src/lib/readyForQuote.ts`), y los totales de la
-cotización formal (`src/lib/quoteTotals.ts`).
+(`src/lib/checklist.ts`, `src/lib/readyForQuote.ts`), los totales de la
+cotización formal (`src/lib/quoteTotals.ts`) y la verificación del secreto
+de los cron jobs (`src/lib/cron.ts`).
 
 ## QA manual
 
@@ -445,13 +498,16 @@ un proyecto Supabase real:
 - [`SPRINT_4_QA.md`](./SPRINT_4_QA.md) — borrador/aprobación/emisión de
   cotización formal, numeración correlativa, respuesta del cliente
   (aceptar/rechazar), PDF comercial, RLS.
+- [`SPRINT_5_QA.md`](./SPRINT_5_QA.md) — health center, feature flags con
+  fallback a consola/log, tipo de cambio BNA, referencias BCRA/VUCE, cron
+  jobs protegidos por `CRON_SECRET`, RLS.
 
 ## Deploy en Vercel
 
 1. Importá el repositorio en [vercel.com/new](https://vercel.com/new). Framework
    preset "Next.js" se detecta solo.
 2. En **Settings → Environment Variables** del proyecto de Vercel, cargá las
-   mismas tres variables de `.env.local` para los entornos que uses
+   mismas cuatro variables de `.env.local` para los entornos que uses
    (Production / Preview / Development):
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
@@ -459,9 +515,17 @@ un proyecto Supabase real:
      bundle del cliente — al no tener el prefijo `NEXT_PUBLIC_`, Next.js ya
      la mantiene server-only, pero revisá igual que ningún código bajo
      `'use client'` la importe).
+   - `CRON_SECRET` (cualquier string largo generado por vos, ej.
+     `openssl rand -hex 24`) — Vercel lo agrega automáticamente como header
+     `Authorization: Bearer $CRON_SECRET` en cada invocación de los cron
+     jobs definidos en `vercel.json`; sin esta variable, `/api/cron/*`
+     rechaza todas las requests con 401.
 3. Deploy. Vercel construye con `npm run build` — el mismo comando que
    corrés localmente, y no requiere las variables de Supabase en build time
-   (todas las rutas son dinámicas), sólo en runtime.
+   (todas las rutas son dinámicas), sólo en runtime. `vercel.json` registra
+   los dos cron jobs (`expire-formal-quotes`, `expire-documents`) con
+   frecuencia diaria — no requiere configuración manual adicional en el
+   dashboard.
 4. Una vez que tengas la URL de producción (`https://tu-proyecto.vercel.app`
    o tu dominio propio), volvé a **Supabase → Authentication → URL
    Configuration** y agregala a **Site URL** / **Redirect URLs** (ver paso 8
@@ -478,7 +542,7 @@ Checklist rápido de "no hay nada hardcodeado":
       `process.env.*`).
 - [ ] `.env.local` y `.env*` (salvo `.env.example`) están en `.gitignore` y
       `git status` no los lista como trackeados.
-- [ ] `.env.example` lista las tres variables sin valores reales.
+- [ ] `.env.example` lista las cuatro variables sin valores reales.
 - [ ] `npm run build` termina sin errores con `.env.local` ausente (las
       credenciales sólo hacen falta en runtime, no en build).
 
@@ -491,18 +555,23 @@ Checklist rápido de "no hay nada hardcodeado":
 - Asignación de especialista aduanero/despachante como rol separado de
   `admin_pjm`, con permisos más granulares (hoy valida NCM y gestiona
   documentos el mismo rol que administra todo el panel).
-- Documentos: OCR/extracción automática de datos de invoice, vencimiento
-  automático de documentos (`status = 'expired'` hoy no lo dispara nada).
+- Documentos: OCR/extracción automática de datos de invoice; el vencimiento
+  automático ya existe (`documents.expires_at` + cron), falta que la UI de
+  carga permita cargar esa fecha (hoy sólo se puede setear manualmente en
+  Supabase).
 - PDFs (preliminar y comercial) con diseño más avanzado (hoy son vistas
-  imprimibles desde el navegador) y envío por email (los adapters de
-  notificación son in-app únicamente por ahora).
+  imprimibles desde el navegador).
 - Selector de usuario real para "Asignado a" en el panel PJM (hoy sólo hay
-  autoasignación); un cron que expire documentos vencidos y cotizaciones
-  formales (`formal_quotes.status = 'expired'` cuando pasa `valid_until`,
-  hoy no lo dispara nada automáticamente).
+  autoasignación).
 - Cotización formal: versionado explícito (recotizar sobre una cotización
   rechazada creando una v2 en vez de un borrador nuevo desde cero), y
   aprobación por un segundo rol/usuario distinto de quien arma el borrador
   (hoy cualquier `admin_pjm` puede aprobar su propio borrador).
-- Integraciones futuras (fuera de alcance de este MVP): ARCA, Banco Nación /
-  MULC, navieras, pagos, IA clasificadora de NCM.
+- Integraciones reales: conectar proveedores efectivos de email/WhatsApp/
+  webhooks detrás de los adapters ya armados en
+  `src/lib/integrations/dispatch.ts` (hoy caen a consola/log a propósito,
+  sin credenciales), y reemplazar la carga manual de ARCA/BNA/BCRA/VUCE por
+  consumo real de sus APIs/fuentes de datos cuando estén disponibles y
+  sean estables.
+- Fuera de alcance de este MVP: navieras, pagos, IA clasificadora de NCM,
+  firma digital, integración con ERP.

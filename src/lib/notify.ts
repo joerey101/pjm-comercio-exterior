@@ -1,5 +1,6 @@
 import 'server-only';
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { dispatchIntegration } from '@/lib/integrations/dispatch';
 
 export interface NotifyInput {
   userId: string;
@@ -14,7 +15,10 @@ export interface NotifyInput {
  * (a client notifying admins, or vice versa). Uses the service-role client
  * because notifications RLS only lets a session insert rows for itself (see
  * 0003_documents_checklist_admin.sql) — this is the one place that's
- * allowed to fan out to other users. Never throws.
+ * allowed to fan out to other users. Also fans out to the email adapter
+ * (Sprint 5) so every in-app notification has a matching outbound-channel
+ * attempt, logged in integration_logs regardless of whether the channel is
+ * enabled. Never throws.
  */
 export async function notifyUser(input: NotifyInput): Promise<void> {
   try {
@@ -29,6 +33,12 @@ export async function notifyUser(input: NotifyInput): Promise<void> {
   } catch {
     // best-effort only
   }
+  await dispatchIntegration({
+    channel: 'email',
+    eventType: input.type,
+    recipient: input.userId,
+    payload: { title: input.title, message: input.message, linkUrl: input.linkUrl },
+  });
 }
 
 /** Notifies every admin_pjm user at once (new request, client upload, etc). */
@@ -49,4 +59,10 @@ export async function notifyAllAdmins(input: Omit<NotifyInput, 'userId'>): Promi
   } catch {
     // best-effort only
   }
+  await dispatchIntegration({
+    channel: 'email',
+    eventType: input.type,
+    recipient: 'admin_pjm',
+    payload: { title: input.title, message: input.message, linkUrl: input.linkUrl },
+  });
 }

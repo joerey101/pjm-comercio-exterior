@@ -7,6 +7,7 @@ const LINKS = [
   { href: '/admin/ncm/intervenciones', label: 'Intervenciones' },
   { href: '/admin/usuarios', label: 'Usuarios' },
   { href: '/admin/empresas', label: 'Empresas' },
+  { href: '/admin/integraciones', label: 'Integraciones' },
 ];
 
 export function AdminNav({ active }: { active: string }) {

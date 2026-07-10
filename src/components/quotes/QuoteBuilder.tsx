@@ -11,6 +11,7 @@ import {
   approveQuote,
   issueQuote,
   cancelQuote,
+  setQuoteExchangeRate,
 } from '@/app/actions/quotes';
 import { Button } from '@/components/ui/Button';
 import { inputClass, selectClass, textareaClass } from '@/components/ui/Field';
@@ -23,11 +24,13 @@ export function QuoteBuilder({
   items,
   costs,
   simulationId,
+  latestBnaRate,
 }: {
   quote: FormalQuoteRow;
   items: FormalQuoteItemRow[];
   costs: FormalQuoteCostRow[];
   simulationId: string;
+  latestBnaRate?: { rate: number; date: string } | null;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -80,6 +83,26 @@ export function QuoteBuilder({
           <textarea rows={2} className={textareaClass} disabled={!isDraft} value={exclusions} onChange={(e) => setExclusions(e.target.value)} />
         </div>
       </div>
+
+      <div className="flex items-end gap-3">
+        <div>
+          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">Tipo de cambio (BNA)</label>
+          <p className="text-sm font-semibold text-slate-700 h-10 flex items-center">
+            {quote.exchange_rate ? quote.exchange_rate : 'Sin fijar'}
+          </p>
+        </div>
+        {isDraft && latestBnaRate && (
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={isPending}
+            onClick={() => run(() => setQuoteExchangeRate(quote.id, simulationId, latestBnaRate.rate))}
+          >
+            Usar último TC BNA ({latestBnaRate.rate}, {new Date(latestBnaRate.date).toLocaleDateString('es-AR')})
+          </Button>
+        )}
+      </div>
+
       {isDraft && (
         <Button
           type="button"

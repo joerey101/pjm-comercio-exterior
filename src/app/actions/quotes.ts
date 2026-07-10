@@ -127,6 +127,16 @@ export async function updateQuoteTerms(
   return { ok: true };
 }
 
+/** Snapshots a BNA-entered exchange rate onto a draft quote (Sprint 5). */
+export async function setQuoteExchangeRate(quoteId: string, simulationId: string, rate: number): Promise<ActionResult> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.from('formal_quotes').update({ exchange_rate: rate }).eq('id', quoteId).eq('status', 'draft');
+  if (error) return { error: mapDbError(error.message) };
+  revalidatePath(`/admin/solicitudes/${simulationId}`);
+  return { ok: true };
+}
+
 export async function addQuoteItem(
   quoteId: string,
   simulationId: string,

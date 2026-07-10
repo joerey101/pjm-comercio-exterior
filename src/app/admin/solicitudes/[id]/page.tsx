@@ -57,13 +57,22 @@ export default async function AdminRequestDetailPage({ params }: { params: Promi
   const latestQuote = quotes?.[0] ?? null;
   let quoteItems: FormalQuoteItemRow[] = [];
   let quoteCosts: FormalQuoteCostRow[] = [];
+  let latestBnaRate: { rate: number; date: string } | null = null;
   if (latestQuote) {
-    const [{ data: qi }, { data: qc }] = await Promise.all([
+    const [{ data: qi }, { data: qc }, { data: rate }] = await Promise.all([
       supabase.from('formal_quote_items').select('*').eq('formal_quote_id', latestQuote.id).order('sort_order').returns<FormalQuoteItemRow[]>(),
       supabase.from('formal_quote_costs').select('*').eq('formal_quote_id', latestQuote.id).order('sort_order').returns<FormalQuoteCostRow[]>(),
+      supabase
+        .from('exchange_rates')
+        .select('sell_rate, rate_date')
+        .eq('currency', latestQuote.currency)
+        .order('rate_date', { ascending: false })
+        .limit(1)
+        .maybeSingle<{ sell_rate: number; rate_date: string }>(),
     ]);
     quoteItems = qi ?? [];
     quoteCosts = qc ?? [];
+    latestBnaRate = rate ? { rate: rate.sell_rate, date: rate.rate_date } : null;
   }
 
   const { data: comments } = await supabase
@@ -189,7 +198,7 @@ export default async function AdminRequestDetailPage({ params }: { params: Promi
     <div className="bg-white border border-slate-200 rounded-2xl p-6">
       {latestQuote ? (
         latestQuote.status === 'draft' || latestQuote.status === 'approved' ? (
-          <QuoteBuilder quote={latestQuote} items={quoteItems} costs={quoteCosts} simulationId={simulation.id} />
+          <QuoteBuilder quote={latestQuote} items={quoteItems} costs={quoteCosts} simulationId={simulation.id} latestBnaRate={latestBnaRate} />
         ) : (
           <QuoteSummaryCard quote={latestQuote} pdfHref={`/simulaciones/${simulation.id}/cotizacion/pdf`} />
         )

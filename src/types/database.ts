@@ -344,6 +344,7 @@ export interface FormalQuoteRow {
   status: string;
   version: number;
   currency: string;
+  exchange_rate: number | null;
   snapshot: unknown;
   payment_terms: string | null;
   validity_days: number;
@@ -383,6 +384,49 @@ export interface FormalQuoteCostRow {
   label: string;
   amount: number;
   sort_order: number;
+  created_at: string;
+}
+
+export interface FeatureFlagRow {
+  key: string;
+  enabled: boolean;
+  description: string | null;
+  updated_by: string | null;
+  updated_at: string;
+}
+
+export interface ExchangeRateRow {
+  id: string;
+  rate_date: string;
+  currency: string;
+  buy_rate: number;
+  sell_rate: number;
+  source: string;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface RegulatoryReferenceRow {
+  id: string;
+  category: string;
+  title: string;
+  description: string | null;
+  url: string | null;
+  ncm_code: string | null;
+  is_active: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IntegrationLogRow {
+  id: string;
+  channel: string;
+  event_type: string;
+  recipient: string | null;
+  payload: unknown;
+  status: string;
+  error_message: string | null;
   created_at: string;
 }
 
