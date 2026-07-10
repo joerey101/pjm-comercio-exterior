@@ -1,0 +1,83 @@
+import type { SimulationDraft, ChecklistItemState } from '@/types/simulation';
+
+export const DEFAULT_CHECKLIST: ChecklistItemState[] = [
+  { key: 'invoice_cargada', label: 'Invoice cargada', checked: false },
+  { key: 'invoice_numero_fecha', label: 'Invoice incluye número y fecha', checked: false },
+  { key: 'invoice_cuit', label: 'Invoice incluye CUIT del importador', checked: false },
+  { key: 'invoice_incoterm', label: 'Invoice incluye Incoterm', checked: false },
+  { key: 'packing_list', label: 'Packing list cargado', checked: false },
+  { key: 'pais_origen_coincide', label: 'País de origen coincide con factura', checked: false },
+  { key: 'valor_fob_declarado', label: 'Valor FOB declarado', checked: false },
+  { key: 'ncm_por_item', label: 'NCM asociado a cada ítem', checked: false },
+  { key: 'intervenciones_revisadas', label: 'Intervenciones revisadas', checked: false },
+  { key: 'bl_awb', label: 'BL / AWB cargado o pendiente', checked: false },
+  { key: 'despachante_asignado', label: 'Despachante asignado', checked: false },
+  { key: 'domicilio_destino', label: 'Domicilio de destino informado', checked: false },
+];
+
+export function emptyMerchandiseItem(id: string) {
+  return {
+    id,
+    description: '',
+    technicalDescription: '',
+    brandModel: '',
+    intendedUse: '',
+    quantity: 1,
+    unitValue: 0,
+    totalValue: 0,
+    grossWeightKg: 0,
+    netWeightKg: 0,
+    lengthCm: 0,
+    widthCm: 0,
+    heightCm: 0,
+    cbm: 0,
+    packages: 1,
+    packagingType: '',
+    countryOfOrigin: '',
+    ncmCode: '',
+    ncmDescription: '',
+    ncmStatus: 'no_informado' as const,
+  };
+}
+
+export function emptySimulationDraft(): SimulationDraft {
+  return {
+    operation: {
+      operationType: 'importacion',
+      transportMode: 'ocean_lcl',
+      incoterm: 'FOB',
+      originCountry: 'China',
+      originPort: 'CNSHA',
+      destinationPort: 'ARADU',
+      finalDestination: '',
+      currency: 'USD',
+      exchangeRate: 1,
+      shipmentDate: null,
+      arrivalDate: null,
+      supplier: '',
+      buyer: '',
+    },
+    items: [emptyMerchandiseItem('item-1')],
+    containers: { cnt20: 0, cnt40: 1, cnt40hc: 0 },
+    intervention: { agencies: ['sin_intervencion'], risk: 'verde', notes: '' },
+    logistics: {
+      mainFreightRate: 85,
+      bafFsc: 75,
+      originLocalCharges: 120,
+      destinationLocalCharges: 180,
+      customsBrokerFee: 250,
+      insurancePercent: 0.35,
+      internalFreight: 0,
+      otherDefinitiveCosts: 0,
+    },
+    taxRates: {
+      importDuty: 16,
+      statisticalRate: 3,
+      iva: 10.5,
+      ivaAdditional: 10,
+      ganancias: 6,
+      iibb: 2.5,
+    },
+    checklist: DEFAULT_CHECKLIST,
+  };
+}
