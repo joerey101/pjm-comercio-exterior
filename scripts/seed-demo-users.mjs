@@ -100,6 +100,22 @@ async function main() {
       console.log(`+ Creado ${demo.email} (${demo.role}) — id ${userId}`);
     }
 
+    // El trigger handle_new_user siempre crea el profile como 'cliente'
+    // (ver 0006_security_hardening.sql: el rol nunca se decide desde el
+    // cliente). El ascenso a admin_pjm se hace acá, con la service_role key,
+    // que puede porque corre sin sesión JWT (auth.uid() is null).
+    if (demo.role !== 'cliente' && userId) {
+      const { error: roleError } = await supabase
+        .from('profiles')
+        .update({ role: demo.role })
+        .eq('id', userId);
+      if (roleError) {
+        console.error(`x Error asignando rol ${demo.role} a ${demo.email}:`, roleError.message);
+      } else {
+        console.log(`  + Rol ${demo.role} asignado a ${demo.email}`);
+      }
+    }
+
     if (demo.company && userId) {
       const { data: existingCompany } = await supabase
         .from('companies')

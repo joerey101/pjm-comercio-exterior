@@ -156,6 +156,14 @@ No hace falta cerrar sesión: el gate de `/admin` (`src/proxy.ts` →
 `src/lib/supabase/middleware.ts`) consulta `profiles.role` en cada request,
 no el JWT, así que el cambio aplica en el siguiente request.
 
+> **Seguridad (migración `0006_security_hardening.sql`):** el rol nunca se
+> decide desde el cliente. Los altas por `/registro` siempre nacen como
+> `cliente` (el trigger `handle_new_user` ignora cualquier `role` de la
+> metadata), y un `UPDATE` de `profiles.role` sólo lo permite un contexto sin
+> sesión JWT (service_role, SQL Editor) o un usuario que ya sea `admin_pjm`.
+> Por eso el `UPDATE` de arriba funciona desde el SQL Editor, pero un cliente
+> logueado **no** puede promoverse a sí mismo. No relajes esa regla.
+
 ### 8. Configurar las redirect URLs de Supabase Auth
 
 En **Authentication → URL Configuration**:

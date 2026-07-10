@@ -43,8 +43,12 @@ alter table public.ncm_positions alter column normalized_code set not null;
 alter table public.tax_parameters drop constraint if exists tax_parameters_ncm_code_fkey;
 
 -- One row per (code, version): a new version can reintroduce the same code.
-drop index if exists ncm_positions_code_key;
+-- The Sprint 1 `code text ... unique` creates a UNIQUE CONSTRAINT
+-- (ncm_positions_code_key) backed by an index of the same name; that index
+-- cannot be dropped on its own, so drop the CONSTRAINT first (which drops its
+-- backing index), then drop any bare leftover index defensively.
 alter table public.ncm_positions drop constraint if exists ncm_positions_code_key;
+drop index if exists ncm_positions_code_key;
 create unique index if not exists ncm_positions_code_version_idx on public.ncm_positions (code, version_id);
 create index if not exists ncm_positions_normalized_code_idx on public.ncm_positions (normalized_code);
 create index if not exists ncm_positions_version_id_idx on public.ncm_positions (version_id);

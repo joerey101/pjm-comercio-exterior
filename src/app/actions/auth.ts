@@ -1,7 +1,7 @@
 'use server';
 
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { LoginFormSchema, SignupFormSchema, type LoginFormState, type SignupFormState } from '@/lib/validations/auth';
 import { mapAuthError } from '@/lib/errorMessages';
 
@@ -55,7 +55,13 @@ export async function signup(_state: SignupFormState, formData: FormData): Promi
   const userId = signUpData.user?.id;
   let companyWarning: string | null = null;
   if (userId) {
-    const { error: companyError } = await supabase.from('companies').insert({
+    // Insert the company with the service-role client, not the session client.
+    // When "Confirm email" is enabled in Supabase, signUp() returns no session,
+    // so a session-scoped insert runs as anon (auth.uid() is null) and RLS
+    // ("companies_insert_own" requires user_id = auth.uid()) silently rejects
+    // it — losing the company data the user just typed. This runs server-side
+    // only, right after we created the user, so trusting `userId` is safe.
+    const { error: companyError } = await createServiceRoleClient().from('companies').insert({
       user_id: userId,
       business_name: data.businessName,
       cuit: data.cuit,
