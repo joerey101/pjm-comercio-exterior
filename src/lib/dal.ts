@@ -34,6 +34,6 @@ export async function requireUser() {
 export async function requireAdmin() {
   const profile = await getCurrentProfile();
   if (!profile) redirect('/login');
-  if (profile.role !== 'admin_pjm') redirect('/dashboard');
+  if (profile.role !== 'admin_pjm') redirect('/dashboard?error=forbidden');
   return profile;
 }

@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server';
 import { requireUser } from '@/lib/dal';
 import { calculateSimulationSummary } from '@/lib/calculations/importCostCalculator';
 import { merchandiseToCargoItem, totalFobValue, totalUnits } from '@/lib/adapters';
+import { mapDbError } from '@/lib/errorMessages';
 import type { SimulationDraft } from '@/types/simulation';
 
 export interface SaveSimulationPayload {
@@ -104,11 +105,11 @@ export async function saveSimulation(
 
   if (simulationId) {
     const { error } = await supabase.from('simulations').update(simulationRow).eq('id', simulationId);
-    if (error) return { error: error.message };
+    if (error) return { error: mapDbError(error.message) };
     await supabase.from('simulation_items').delete().eq('simulation_id', simulationId);
   } else {
     const { data, error } = await supabase.from('simulations').insert(simulationRow).select('id').single();
-    if (error) return { error: error.message };
+    if (error) return { error: mapDbError(error.message) };
     simulationId = data.id;
   }
 
@@ -136,7 +137,7 @@ export async function saveSimulation(
       ncm_status: item.ncmStatus,
     }));
     const { error: itemsError } = await supabase.from('simulation_items').insert(itemRows);
-    if (itemsError) return { error: itemsError.message };
+    if (itemsError) return { error: mapDbError(itemsError.message) };
   }
 
   const logisticsRow = {
@@ -179,22 +180,41 @@ export async function requestFormalQuote(simulationId: string): Promise<{ ok: tr
     .from('simulations')
     .select('id, user_id')
     .eq('id', simulationId)
-    .single();
+    .maybeSingle();
 
-  if (fetchError || !simulation || simulation.user_id !== user.id) {
-    return { error: 'No se encontró la simulación.' };
+  if (fetchError) return { error: mapDbError(fetchError.message) };
+  if (!simulation || simulation.user_id !== user.id) {
+    return { error: 'No se encontró la simulación o no tenés permisos para solicitarla.' };
+  }
+
+  const { data: company } = await supabase.from('companies').select('id').eq('user_id', user.id).maybeSingle();
+  if (!company) {
+    return {
+      error: 'Antes de solicitar una cotización formal, completá los datos de tu empresa en la sección "Perfil".',
+    };
   }
 
   const { error: updateError } = await supabase
     .from('simulations')
     .update({ status: 'sent_to_pjm' })
     .eq('id', simulationId);
-  if (updateError) return { error: updateError.message };
+  if (updateError) return { error: mapDbError(updateError.message) };
 
-  const { error: requestError } = await supabase
+  // Insert-if-missing rather than upsert: once a pjm_requests row exists,
+  // only admin_pjm can update it (see RLS), so re-requesting must be a no-op
+  // for the client rather than attempting (and failing) an update.
+  const { data: existingRequest } = await supabase
     .from('pjm_requests')
-    .upsert({ simulation_id: simulationId, status: 'sent_to_pjm' }, { onConflict: 'simulation_id' });
-  if (requestError) return { error: requestError.message };
+    .select('id')
+    .eq('simulation_id', simulationId)
+    .maybeSingle();
+
+  if (!existingRequest) {
+    const { error: requestError } = await supabase
+      .from('pjm_requests')
+      .insert({ simulation_id: simulationId, status: 'sent_to_pjm' });
+    if (requestError) return { error: mapDbError(requestError.message) };
+  }
 
   revalidatePath('/dashboard');
   revalidatePath(`/simulaciones/${simulationId}`);

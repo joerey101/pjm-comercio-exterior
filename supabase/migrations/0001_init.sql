@@ -67,7 +67,7 @@ $$;
 -- ---------------------------------------------------------------------------
 create table if not exists public.companies (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references public.profiles (id) on delete cascade,
+  user_id uuid not null unique references public.profiles (id) on delete cascade,
   business_name text not null default '',
   cuit text not null default '',
   tax_condition text not null default '',
@@ -300,6 +300,22 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------------
+-- Indexes (Postgres does not auto-index foreign key columns; the app filters
+-- and joins on all of these, so they matter as soon as data volume grows)
+-- ---------------------------------------------------------------------------
+create index if not exists companies_user_id_idx on public.companies (user_id);
+create index if not exists simulations_user_id_idx on public.simulations (user_id);
+create index if not exists simulations_company_id_idx on public.simulations (company_id);
+create index if not exists simulations_status_idx on public.simulations (status);
+create index if not exists simulation_items_simulation_id_idx on public.simulation_items (simulation_id);
+create index if not exists documents_simulation_id_idx on public.documents (simulation_id);
+create index if not exists pjm_requests_assigned_to_idx on public.pjm_requests (assigned_to);
+create index if not exists pjm_requests_status_idx on public.pjm_requests (status);
+create index if not exists comments_request_id_idx on public.comments (request_id);
+create index if not exists comments_user_id_idx on public.comments (user_id);
+create index if not exists tax_parameters_ncm_code_idx on public.tax_parameters (ncm_code);
+
+-- ---------------------------------------------------------------------------
 -- Row Level Security
 -- ---------------------------------------------------------------------------
 alter table public.profiles enable row level security;
@@ -325,7 +341,8 @@ create policy "companies_select_own_or_admin" on public.companies for select
 create policy "companies_insert_own" on public.companies for insert
   with check (user_id = auth.uid());
 create policy "companies_update_own_or_admin" on public.companies for update
-  using (user_id = auth.uid() or public.is_admin_pjm());
+  using (user_id = auth.uid() or public.is_admin_pjm())
+  with check (user_id = auth.uid() or public.is_admin_pjm());
 
 -- simulations: owner or admin
 create policy "simulations_select_own_or_admin" on public.simulations for select
@@ -333,7 +350,8 @@ create policy "simulations_select_own_or_admin" on public.simulations for select
 create policy "simulations_insert_own" on public.simulations for insert
   with check (user_id = auth.uid());
 create policy "simulations_update_own_or_admin" on public.simulations for update
-  using (user_id = auth.uid() or public.is_admin_pjm());
+  using (user_id = auth.uid() or public.is_admin_pjm())
+  with check (user_id = auth.uid() or public.is_admin_pjm());
 create policy "simulations_delete_own" on public.simulations for delete
   using (user_id = auth.uid());
 
@@ -364,7 +382,7 @@ create policy "pjm_requests_update_admin" on public.pjm_requests for update
 create policy "comments_select_admin" on public.comments for select
   using (public.is_admin_pjm());
 create policy "comments_insert_admin" on public.comments for insert
-  with check (public.is_admin_pjm());
+  with check (public.is_admin_pjm() and user_id = auth.uid());
 
 -- ncm_positions / tax_parameters: readable by any authenticated user, writable by admin only
 create policy "ncm_positions_select_authenticated" on public.ncm_positions for select

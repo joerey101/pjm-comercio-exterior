@@ -46,20 +46,30 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (isAdminOnly && user) {
-    const role = user.user_metadata?.role;
-    if (role !== 'admin_pjm') {
+  if ((isAdminOnly || isAuthPage) && user) {
+    // Read the role from `profiles` rather than the JWT's `user_metadata`:
+    // the metadata is only refreshed on token issuance, so it goes stale the
+    // moment someone is promoted to admin_pjm directly in the database (the
+    // documented way to create the first admin). Querying profiles keeps
+    // this check correct immediately after a promotion, without requiring
+    // the user to log out and back in.
+    const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle();
+    const role = profile?.role;
+
+    if (isAdminOnly && role !== 'admin_pjm') {
       const url = request.nextUrl.clone();
       url.pathname = '/dashboard';
+      url.search = '';
+      url.searchParams.set('error', 'forbidden');
       return NextResponse.redirect(url);
     }
-  }
 
-  if (isAuthPage && user) {
-    const role = user.user_metadata?.role;
-    const url = request.nextUrl.clone();
-    url.pathname = role === 'admin_pjm' ? '/admin' : '/dashboard';
-    return NextResponse.redirect(url);
+    if (isAuthPage) {
+      const url = request.nextUrl.clone();
+      url.pathname = role === 'admin_pjm' ? '/admin' : '/dashboard';
+      url.search = '';
+      return NextResponse.redirect(url);
+    }
   }
 
   return supabaseResponse;

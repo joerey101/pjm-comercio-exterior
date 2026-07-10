@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { LoginFormSchema, SignupFormSchema, type LoginFormState, type SignupFormState } from '@/lib/validations/auth';
+import { mapAuthError } from '@/lib/errorMessages';
 
 export async function signup(_state: SignupFormState, formData: FormData): Promise<SignupFormState> {
   const validated = SignupFormSchema.safeParse({
@@ -48,12 +49,13 @@ export async function signup(_state: SignupFormState, formData: FormData): Promi
   });
 
   if (error) {
-    return { message: error.message };
+    return { message: mapAuthError(error.message) };
   }
 
   const userId = signUpData.user?.id;
+  let companyWarning: string | null = null;
   if (userId) {
-    await supabase.from('companies').insert({
+    const { error: companyError } = await supabase.from('companies').insert({
       user_id: userId,
       business_name: data.businessName,
       cuit: data.cuit,
@@ -64,10 +66,22 @@ export async function signup(_state: SignupFormState, formData: FormData): Promi
       usual_transport_mode: data.usualTransportMode,
       usual_products: data.usualProducts,
     });
+    if (companyError) {
+      companyWarning =
+        'Tu cuenta se creó correctamente, pero no pudimos guardar los datos de tu empresa. Iniciá sesión y completalos desde "Perfil" antes de crear una simulación.';
+    }
   }
 
   if (!signUpData.session) {
-    return { message: 'Cuenta creada. Revisá tu email para confirmar el registro antes de iniciar sesión.' };
+    return {
+      message:
+        companyWarning ??
+        'Cuenta creada. Revisá tu email para confirmar el registro antes de iniciar sesión.',
+    };
+  }
+
+  if (companyWarning) {
+    return { message: companyWarning };
   }
 
   redirect('/dashboard');
@@ -87,7 +101,7 @@ export async function login(_state: LoginFormState, formData: FormData): Promise
   const { data, error } = await supabase.auth.signInWithPassword(validated.data);
 
   if (error) {
-    return { message: 'Email o contraseña incorrectos.' };
+    return { message: mapAuthError(error.message) };
   }
 
   const role = data.user?.user_metadata?.role;
