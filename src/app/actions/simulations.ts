@@ -6,7 +6,11 @@ import { requireUser } from '@/lib/dal';
 import { calculateSimulationSummary } from '@/lib/calculations/importCostCalculator';
 import { merchandiseToCargoItem, totalFobValue, totalUnits } from '@/lib/adapters';
 import { mapDbError } from '@/lib/errorMessages';
+import { normalizeNcmCode } from '@/lib/ncm/normalizeNcmCode';
+import { matchTaxParameters, type MatchableTaxParameter } from '@/lib/ncm/matchTaxParameters';
+import { matchInterventionRules, type MatchableInterventionRule } from '@/lib/ncm/matchInterventionRules';
 import type { SimulationDraft } from '@/types/simulation';
+import type { TaxParameterRow, InterventionRuleRow } from '@/types/database';
 
 export interface SaveSimulationPayload {
   id?: string;
@@ -62,6 +66,51 @@ export async function saveSimulation(
 
   const documentStatus = 'incomplete';
 
+  // Resolve tax/intervention warnings against the real, active catalog
+  // (Sprint 2) for every distinct NCM code used in this simulation.
+  const distinctCodes = Array.from(new Set(draft.items.map((i) => normalizeNcmCode(i.ncmCode)).filter(Boolean)));
+  let hasTaxWarning = distinctCodes.length === 0;
+  let hasInterventionWarning = false;
+  let hasBlockingIntervention = false;
+
+  if (distinctCodes.length > 0) {
+    const [{ data: taxRows }, { data: ruleRows }] = await Promise.all([
+      supabase.from('tax_parameters').select('*').eq('is_active', true).in('normalized_ncm_code', distinctCodes).returns<TaxParameterRow[]>(),
+      supabase.from('intervention_rules').select('*').eq('is_active', true).returns<InterventionRuleRow[]>(),
+    ]);
+
+    const taxCandidates: MatchableTaxParameter[] = (taxRows ?? []).map((t) => ({
+      id: t.id,
+      normalizedNcmCode: t.normalized_ncm_code,
+      isActive: t.is_active,
+      importDuty: t.import_duty,
+      statisticalRate: t.statistical_rate,
+      iva: t.iva,
+      ivaAdditional: t.iva_additional,
+      ganancias: t.ganancias,
+      iibb: t.iibb,
+      otherTax: t.other_tax,
+    }));
+    const interventionCandidates: MatchableInterventionRule[] = (ruleRows ?? []).map((r) => ({
+      id: r.id,
+      normalizedNcmCode: r.normalized_ncm_code,
+      chapter: r.chapter,
+      interventionType: r.intervention_type as MatchableInterventionRule['interventionType'],
+      description: r.description,
+      severity: r.severity,
+      isActive: r.is_active,
+    }));
+
+    for (const code of distinctCodes) {
+      if (!matchTaxParameters(code, taxCandidates)) hasTaxWarning = true;
+      const interventionMatch = matchInterventionRules(code, interventionCandidates);
+      if (interventionMatch.hasWarning) hasInterventionWarning = true;
+      if (interventionMatch.hasBlocking) hasBlockingIntervention = true;
+    }
+  }
+
+  const hasNcmWarning = ncmStatuses.some((s) => s === 'no_informado' || s === 'propuesto_cliente' || s === 'requiere_revision');
+
   const simulationRow = {
     user_id: user.id,
     company_id: company?.id ?? null,
@@ -99,6 +148,10 @@ export async function saveSimulation(
     ncm_status: overallNcmStatus,
     document_status: documentStatus,
     raw_data: draft as unknown as Record<string, unknown>,
+    has_ncm_warning: hasNcmWarning,
+    has_tax_warning: hasTaxWarning,
+    has_intervention_warning: hasInterventionWarning,
+    has_blocking_intervention: hasBlockingIntervention,
   };
 
   let simulationId = payload.id;
@@ -135,6 +188,9 @@ export async function saveSimulation(
       ncm_code: item.ncmCode,
       ncm_description: item.ncmDescription,
       ncm_status: item.ncmStatus,
+      ncm_position_id: item.ncmPositionId,
+      ncm_source: item.ncmSource,
+      tax_parameter_id: item.taxParameterId,
     }));
     const { error: itemsError } = await supabase.from('simulation_items').insert(itemRows);
     if (itemsError) return { error: mapDbError(itemsError.message) };

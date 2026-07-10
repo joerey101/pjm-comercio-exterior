@@ -172,28 +172,32 @@ src/
     simulaciones/nueva/       Wizard de nueva simulación
     simulaciones/[id]/        Resultado / detalle de simulación
     simulaciones/[id]/pdf/    PDF preliminar (imprimible)
-    admin/                    Panel interno PJM (solicitudes, usuarios, empresas)
-    actions/                  Server Actions (auth, company, simulations, admin)
+    admin/                    Panel interno PJM (solicitudes, usuarios, empresas, catálogo NCM)
+    actions/                  Server Actions (auth, company, simulations, admin, ncm)
   components/
     layout/                   Header, Footer
     ui/                       Primitivas (Card, Button, Field, Badge)
     simulation/                Pasos del wizard + tarjetas de resultado
-    admin/                    Controles del panel PJM
+    admin/                    Controles del panel PJM (estados, comentarios, importador, validación NCM)
+    ncm/                      Buscador NCM, tarjetas de detalle/tributos/intervenciones (cliente y admin)
   lib/
-    calculations/              Motor de cálculo (puro, sin UI)
+    calculations/              Motor de cálculo (puro, sin UI) + tests
+    ncm/                       Normalización/búsqueda/match de NCM, tributos e intervenciones; parseo CSV + tests
     supabase/                  Clientes de Supabase (browser/server) + sesión de proxy
-    constants/                 Ubicaciones, tarifas de referencia, catálogo NCM de ejemplo, estilos de estado
+    constants/                 Ubicaciones, tarifas de referencia, catálogo NCM de ejemplo (fallback), estilos de estado
     validations/                Esquemas Zod
     dal.ts                     Data Access Layer (verificación de sesión/rol)
     errorMessages.ts           Traducción de errores de Supabase a mensajes cortos en español
   types/                      Tipos de dominio y de la base de datos
   proxy.ts                    Protección de rutas + refresco de sesión (ex-middleware.ts)
 supabase/
-  migrations/0001_init.sql    Esquema completo + RLS + índices
-  seed.sql                    Catálogo NCM y parámetros de impuestos de ejemplo
+  migrations/0001_init.sql    Esquema base + RLS + índices
+  migrations/0002_ncm_catalog.sql   Catálogo NCM/tributos/intervenciones versionado + RLS (Sprint 2)
+  seed.sql                    Catálogo NCM y parámetros de impuestos de ejemplo (fallback)
 scripts/
   seed-demo-users.mjs         Crea usuarios cliente/admin_pjm de prueba vía Admin API
-QA_CHECKLIST.md               Checklist de pruebas manuales de punta a punta
+QA_CHECKLIST.md               Checklist de pruebas manuales Sprint 1 / 1.5
+SPRINT_2_QA.md                Checklist de pruebas manuales Sprint 2 (NCM/tributos/intervenciones)
 ```
 
 ## Modelo de datos
@@ -227,6 +231,50 @@ bloque "Indexes" al final de `0001_init.sql`; Postgres no las indexa solas).
 `companies.user_id` es `unique`: el modelo del MVP asume una empresa por
 cliente (lo que asumen también `/perfil` y el wizard al usar `.maybeSingle()`).
 
+## Catálogo NCM, tributos e intervenciones (Sprint 2)
+
+`supabase/migrations/0002_ncm_catalog.sql` reemplaza el catálogo de ejemplo
+del Sprint 1 por un módulo real, versionado e importable. Nada de esto
+clasifica una posición arancelaria de forma definitiva: **todo NCM que un
+cliente selecciona queda `pendiente_validacion` hasta que un admin_pjm lo
+valida** desde el detalle de la solicitud.
+
+- `ncm_catalog_versions` / `ncm_positions` — catálogo de posiciones, cada una
+  perteneciendo a una versión. Sólo las posiciones de una versión con
+  `status = 'active'` (`is_active = true`) aparecen en el buscador.
+- `tax_parameter_versions` / `tax_parameters` — tasas (DIE, tasa estadística,
+  IVA, IVA adicional, Ganancias, IIBB) versionadas de la misma forma,
+  independientes del catálogo NCM (una tasa puede cargarse aunque el NCM
+  todavía no exista, con advertencia).
+- `intervention_rule_versions` / `intervention_rules` — reglas ANMAT, SENASA,
+  INAL, etc. por NCM exacto o por capítulo (severidad `info` / `warning` /
+  `blocking`); una regla por NCM exacto siempre gana sobre una de capítulo
+  (`src/lib/ncm/matchInterventionRules.ts`).
+- `import_jobs` — bitácora de cada importación (CSV) con filas
+  procesadas/erróneas y el reporte de errores; se reutiliza en el Sprint 5
+  para las sincronizaciones de ARCA.
+- `ncm_validations` — el historial de "cliente propuso X, PJM validó/rechazó
+  Y", uno por ítem de mercadería.
+
+**Importar un catálogo**: `/admin/ncm`, `/admin/ncm/tributos` y
+`/admin/ncm/intervenciones` aceptan un CSV (ver columnas en cada pantalla).
+Cada importación crea una versión nueva en estado `draft` — no afecta el
+cálculo ni el buscador hasta que un admin la activa desde la lista de
+versiones. Activar una versión nueva no borra la anterior (queda como
+`inactive`, disponible para reactivar = rollback lógico).
+
+El parser de CSV es propio (`src/lib/ncm/csv.ts`, sin dependencias externas)
+y sólo soporta CSV por ahora — XLSX/JSON quedan en "Próximos pasos".
+
+**Buscador y autocompletado** (paso 3 del wizard, `src/components/ncm/`):
+busca por código (con o sin puntos), capítulo o texto libre
+(`src/lib/ncm/searchNcm.ts`), y al seleccionar una posición autocompleta
+descripción, AEC, fuente, vigencia y las tasas tributarias activas
+(`src/lib/ncm/matchTaxParameters.ts`) además de mostrar cualquier
+intervención parametrizada. Si no hay tasas activas para el código, el
+cálculo se marca con advertencia (`simulations.has_tax_warning`) en vez de
+usar un valor inventado.
+
 ## Cálculos
 
 Todo vive en `src/lib/calculations/importCostCalculator.ts` (funciones puras,
@@ -256,12 +304,26 @@ prototipo original, ahora en funciones puras y testeables.
 cada resultado, en el PDF preliminar y en el disclaimer del footer — nunca se
 presenta como cotización vinculante.
 
+## Tests automáticos
+
+```bash
+npm run test
+```
+
+Corre los tests unitarios con [Vitest](https://vitest.dev/) (`src/**/*.test.ts`,
+sin dependencias de Supabase): normalización y búsqueda de NCM, match de
+tributos/intervenciones, parseo/validación de los importadores CSV y el
+motor de cálculo (`src/lib/calculations/importCostCalculator.ts`).
+
 ## QA manual
 
-Antes de cada release, correr la lista de pruebas manuales de punta a punta
-en [`QA_CHECKLIST.md`](./QA_CHECKLIST.md) contra un proyecto Supabase real
-(registro, login, wizard completo, solicitud formal, panel admin y, en
-particular, control de Row Level Security entre dos clientes distintos).
+Antes de cada release, correr las pruebas manuales de punta a punta contra
+un proyecto Supabase real:
+
+- [`QA_CHECKLIST.md`](./QA_CHECKLIST.md) — registro, login, wizard, solicitud
+  formal, panel admin, RLS entre dos clientes distintos (Sprint 1 / 1.5).
+- [`SPRINT_2_QA.md`](./SPRINT_2_QA.md) — buscador NCM, importación de
+  catálogo/tributos/intervenciones, validación NCM en el panel PJM.
 
 ## Deploy en Vercel
 
@@ -304,14 +366,14 @@ Checklist rápido de "no hay nada hardcodeado":
 - Carga real de documentos al bucket `simulation-documents` (invoice, packing
   list, BL/AWB, certificado de origen, etc.) con vista previa y checklist
   conectado a `documents`.
-- Reemplazar el catálogo NCM de ejemplo (`src/lib/constants/ncmSamples.ts`,
-  tablas `ncm_positions`/`tax_parameters`) por una fuente real (MERCOSUR/AEC,
-  ARCA/VUCE), con buscador y versionado por vigencia.
-- Motor de intervenciones (ANMAT, SENASA, INAL, etc.) automático en base al
-  NCM, hoy es una selección manual con semáforo.
+- Catálogo NCM: soportar XLSX/JSON además de CSV en los importadores
+  (`src/lib/ncm/import*.ts`), agregar una tabla `ncm_aliases` para sinónimos
+  de búsqueda, y reemplazar la carga manual por una sincronización real con
+  ARCA Arancel Integrado cuando haya una fuente estable para consumir.
+- Asignación de especialista aduanero/despachante como rol separado de
+  `admin_pjm`, con permisos más granulares (hoy valida NCM el mismo rol que
+  gestiona todo el panel).
 - PDF preliminar con diseño más avanzado (hoy es una vista imprimible desde
   el navegador) y envío por email.
-- Asignación de especialista aduanero/despachante como rol separado de
-  `admin_pjm`, con permisos more granulares.
 - Integraciones futuras (fuera de alcance de este MVP): ARCA, Banco Nación /
   MULC, navieras, pagos, IA clasificadora de NCM.

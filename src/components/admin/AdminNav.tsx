@@ -2,6 +2,9 @@ import Link from 'next/link';
 
 const LINKS = [
   { href: '/admin', label: 'Solicitudes' },
+  { href: '/admin/ncm', label: 'Catálogo NCM' },
+  { href: '/admin/ncm/tributos', label: 'Parámetros tributarios' },
+  { href: '/admin/ncm/intervenciones', label: 'Intervenciones' },
   { href: '/admin/usuarios', label: 'Usuarios' },
   { href: '/admin/empresas', label: 'Empresas' },
 ];

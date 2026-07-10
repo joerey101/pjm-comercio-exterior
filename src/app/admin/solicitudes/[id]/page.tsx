@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/Badge';
 import { formatMoney } from '@/lib/formatMoney';
 import { StatusControls } from '@/components/admin/StatusControls';
 import { CommentForm } from '@/components/admin/CommentForm';
+import { NcmValidationCard } from '@/components/admin/NcmValidationCard';
 import { NCM_STATUS_TONE } from '@/lib/constants/statusStyles';
 import { NCM_STATUS_LABELS, type NCMStatus } from '@/types/ncm';
 import type { SimulationStatus, DocumentStatus } from '@/types/simulation';
@@ -76,13 +77,12 @@ export default async function AdminRequestDetailPage({ params }: { params: Promi
 
       <div className="bg-white border border-slate-200 rounded-2xl p-6 mb-6">
         <h2 className="text-sm font-bold text-slate-900 uppercase mb-4">Mercadería</h2>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto mb-4">
           <table className="w-full text-left text-sm">
             <thead className="text-[11px] font-bold text-slate-500 uppercase border-b border-slate-200">
               <tr>
                 <th className="py-2 pr-3">Descripción</th>
                 <th className="py-2 pr-3">Descripción técnica</th>
-                <th className="py-2 pr-3">NCM</th>
                 <th className="py-2 pr-3 text-right">Cantidad</th>
                 <th className="py-2 pr-3 text-right">Valor total</th>
               </tr>
@@ -92,13 +92,29 @@ export default async function AdminRequestDetailPage({ params }: { params: Promi
                 <tr key={item.id}>
                   <td className="py-2 pr-3 font-medium text-slate-700">{item.description}</td>
                   <td className="py-2 pr-3 text-slate-500">{item.technical_description || '—'}</td>
-                  <td className="py-2 pr-3 text-slate-500">{item.ncm_code || '—'}</td>
                   <td className="py-2 pr-3 text-right">{item.quantity}</td>
                   <td className="py-2 pr-3 text-right">{formatMoney(item.total_value, simulation.currency)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+
+        <h3 className="text-xs font-bold text-slate-900 uppercase mb-3">Validación NCM por ítem</h3>
+        <div className="space-y-3">
+          {(items ?? []).map((item) => (
+            <NcmValidationCard
+              key={item.id}
+              simulationId={simulation.id}
+              itemId={item.id}
+              description={item.description}
+              ncmCode={item.ncm_code}
+              ncmDescription={item.ncm_description}
+              ncmStatus={item.ncm_status as NCMStatus}
+              ncmSource={item.ncm_source}
+            />
+          ))}
+          {(!items || items.length === 0) && <p className="text-xs text-slate-400">Sin ítems cargados.</p>}
         </div>
       </div>
 

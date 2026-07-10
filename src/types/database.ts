@@ -71,6 +71,10 @@ export interface SimulationRow {
   ncm_status: string;
   document_status: string;
   raw_data: unknown;
+  has_ncm_warning: boolean;
+  has_tax_warning: boolean;
+  has_intervention_warning: boolean;
+  has_blocking_intervention: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -97,29 +101,43 @@ export interface SimulationItemRow {
   ncm_code: string | null;
   ncm_description: string | null;
   ncm_status: string;
+  ncm_position_id: string | null;
+  ncm_catalog_version_id: string | null;
+  tax_parameter_id: string | null;
+  ncm_source: string;
+  ncm_validation_notes: string | null;
   created_at: string;
   updated_at: string;
 }
 
+export type CatalogVersionStatus = 'draft' | 'active' | 'inactive' | 'archived';
+
 export interface NCMPositionRow {
   id: string;
+  version_id: string | null;
   code: string;
+  normalized_code: string;
   description: string;
   section: string | null;
   chapter: string | null;
   heading: string | null;
+  subheading: string | null;
   aec: number | null;
   export_rebate: number | null;
   source: string | null;
   valid_from: string | null;
   valid_to: string | null;
+  is_active: boolean;
+  requires_review: boolean;
   created_at: string;
   updated_at: string;
 }
 
 export interface TaxParameterRow {
   id: string;
+  version_id: string | null;
   ncm_code: string | null;
+  normalized_ncm_code: string | null;
   import_duty: number;
   statistical_rate: number;
   iva: number;
@@ -127,11 +145,83 @@ export interface TaxParameterRow {
   ganancias: number;
   iibb: number;
   other_tax: number;
+  base_formula: string;
   source: string | null;
   valid_from: string | null;
   valid_to: string | null;
+  is_active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface CatalogVersionRow {
+  id: string;
+  name: string;
+  source: string;
+  source_url: string | null;
+  imported_by: string | null;
+  imported_at: string;
+  valid_from: string | null;
+  valid_to: string | null;
+  status: CatalogVersionStatus;
+  row_count: number;
+  error_count: number;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InterventionRuleRow {
+  id: string;
+  version_id: string;
+  ncm_code: string | null;
+  normalized_ncm_code: string | null;
+  chapter: string | null;
+  intervention_type: string;
+  description: string;
+  severity: 'info' | 'warning' | 'blocking';
+  source: string | null;
+  valid_from: string | null;
+  valid_to: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ImportJobType = 'ncm_catalog' | 'tax_parameters' | 'intervention_rules';
+export type ImportJobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'completed_with_errors';
+
+export interface ImportJobRow {
+  id: string;
+  job_type: ImportJobType;
+  provider_key: string;
+  trigger_type: 'manual' | 'scheduled' | 'webhook' | 'system';
+  file_name: string | null;
+  version_id: string | null;
+  status: ImportJobStatus;
+  total_rows: number;
+  processed_rows: number;
+  error_rows: number;
+  imported_by: string | null;
+  started_at: string;
+  completed_at: string | null;
+  error_report: { row: number; message: string }[];
+  created_at: string;
+}
+
+export type NCMValidationStatus = 'pending' | 'validated' | 'rejected' | 'requires_review';
+
+export interface NCMValidationRow {
+  id: string;
+  simulation_id: string;
+  simulation_item_id: string | null;
+  proposed_ncm_code: string | null;
+  validated_ncm_code: string | null;
+  status: NCMValidationStatus;
+  validated_by: string | null;
+  validated_at: string | null;
+  notes: string | null;
+  created_at: string;
 }
 
 export interface LogisticCostRow {

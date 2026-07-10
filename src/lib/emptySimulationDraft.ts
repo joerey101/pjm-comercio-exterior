@@ -37,6 +37,9 @@ export function emptyMerchandiseItem(id: string) {
     ncmCode: '',
     ncmDescription: '',
     ncmStatus: 'no_informado' as const,
+    ncmPositionId: null,
+    ncmSource: 'manual' as const,
+    taxParameterId: null,
   };
 }
 

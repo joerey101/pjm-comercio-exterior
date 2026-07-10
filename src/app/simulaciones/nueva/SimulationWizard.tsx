@@ -33,15 +33,28 @@ export function SimulationWizard() {
   const [step, setStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [ncmMeta, setNcmMeta] = useState<{ aec: number | null; catalogSource: string | null; validFrom: string | null; validTo: string | null }>({
+    aec: null,
+    catalogSource: null,
+    validFrom: null,
+    validTo: null,
+  });
 
   const ncmValue: NCMStepValue = useMemo(
     () => ({
       code: draft.items[0]?.ncmCode ?? '',
       description: draft.items[0]?.ncmDescription ?? '',
       status: draft.items[0]?.ncmStatus ?? 'no_informado',
+      positionId: draft.items[0]?.ncmPositionId ?? null,
+      source: draft.items[0]?.ncmSource ?? 'manual',
+      taxParameterId: draft.items[0]?.taxParameterId ?? null,
+      aec: ncmMeta.aec,
+      catalogSource: ncmMeta.catalogSource,
+      validFrom: ncmMeta.validFrom,
+      validTo: ncmMeta.validTo,
       taxRates: draft.taxRates,
     }),
-    [draft.items, draft.taxRates]
+    [draft.items, draft.taxRates, ncmMeta]
   );
 
   const logisticsValue: LogisticsStepValue = draft.logistics;
@@ -117,9 +130,13 @@ export function SimulationWizard() {
         {step === 2 && (
           <NCMStep
             value={ncmValue}
-            onChange={(next) => setDraft({ ...draft, taxRates: next.taxRates })}
+            onChange={(next) => {
+              setDraft({ ...draft, taxRates: next.taxRates });
+              setNcmMeta({ aec: next.aec, catalogSource: next.catalogSource, validFrom: next.validFrom, validTo: next.validTo });
+            }}
             items={draft.items}
             onItemsChange={(items) => setDraft({ ...draft, items })}
+            onInterventionMatch={(intervention) => setDraft({ ...draft, intervention })}
           />
         )}
         {step === 3 && (

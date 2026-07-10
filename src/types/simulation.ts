@@ -97,6 +97,10 @@ export interface MerchandiseItem {
   ncmCode: string;
   ncmDescription: string;
   ncmStatus: NCMStatus;
+  /** Set when the code came from the real catalog search (Sprint 2) vs free-text entry. */
+  ncmPositionId: string | null;
+  ncmSource: 'catalog' | 'manual';
+  taxParameterId: string | null;
 }
 
 export interface InterventionSelection {
