@@ -6,6 +6,7 @@ const TABS = [
   { key: 'resumen', label: 'Resumen' },
   { key: 'documentos', label: 'Documentos' },
   { key: 'checklist', label: 'Checklist' },
+  { key: 'cotizacion', label: 'Cotización formal' },
   { key: 'observaciones', label: 'Observaciones PJM' },
 ] as const;
 
@@ -15,18 +16,20 @@ export function SimulationDetailTabs({
   resumen,
   documentos,
   checklist,
+  cotizacion,
   observaciones,
   observacionesCount,
 }: {
   resumen: ReactNode;
   documentos: ReactNode;
   checklist: ReactNode;
+  cotizacion: ReactNode;
   observaciones: ReactNode;
   observacionesCount?: number;
 }) {
   const [active, setActive] = useState<TabKey>('resumen');
 
-  const content: Record<TabKey, ReactNode> = { resumen, documentos, checklist, observaciones };
+  const content: Record<TabKey, ReactNode> = { resumen, documentos, checklist, cotizacion, observaciones };
 
   return (
     <div>

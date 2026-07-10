@@ -336,6 +336,56 @@ export interface AuditLogRow {
   created_at: string;
 }
 
+export interface FormalQuoteRow {
+  id: string;
+  simulation_id: string;
+  request_id: string | null;
+  quote_number: string | null;
+  status: string;
+  version: number;
+  currency: string;
+  snapshot: unknown;
+  payment_terms: string | null;
+  validity_days: number;
+  notes: string | null;
+  exclusions: string | null;
+  subtotal: number;
+  taxes_total: number;
+  total: number;
+  valid_until: string | null;
+  created_by: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  issued_at: string | null;
+  sent_at: string | null;
+  client_responded_at: string | null;
+  client_response_notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FormalQuoteItemRow {
+  id: string;
+  formal_quote_id: string;
+  description: string;
+  ncm_code: string | null;
+  quantity: number;
+  unit_value: number;
+  total_value: number;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface FormalQuoteCostRow {
+  id: string;
+  formal_quote_id: string;
+  category: string;
+  label: string;
+  amount: number;
+  sort_order: number;
+  created_at: string;
+}
+
 export interface NotificationRow {
   id: string;
   user_id: string;

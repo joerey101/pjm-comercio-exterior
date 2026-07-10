@@ -18,6 +18,9 @@ import { DocumentUploadForm } from '@/components/documents/DocumentUploadForm';
 import { DocumentList } from '@/components/documents/DocumentList';
 import { ChecklistPanel } from '@/components/checklist/ChecklistPanel';
 import { CommentThread } from '@/components/comments/CommentThread';
+import { QuoteSummaryCard } from '@/components/quotes/QuoteSummaryCard';
+import { QuoteResponseForm } from '@/components/quotes/QuoteResponseForm';
+import type { FormalQuoteRow } from '@/types/database';
 
 export default async function SimulationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -32,12 +35,15 @@ export default async function SimulationDetailPage({ params }: { params: Promise
 
   if (!simulation || simulation.user_id !== user.id) notFound();
 
-  const [{ data: items }, { data: documents }, { data: checklistItems }, { data: comments }] = await Promise.all([
+  const [{ data: items }, { data: documents }, { data: checklistItems }, { data: comments }, { data: quotes }] = await Promise.all([
     supabase.from('simulation_items').select('*').eq('simulation_id', id).returns<SimulationItemRow[]>(),
     supabase.from('documents').select('*').eq('simulation_id', id).neq('status', 'replaced').order('uploaded_at', { ascending: false }).returns<DocumentRow[]>(),
     supabase.from('simulation_checklist_items').select('*').eq('simulation_id', id).returns<SimulationChecklistItemRow[]>(),
     supabase.from('comments').select('*').eq('simulation_id', id).eq('visibility', 'client').order('created_at', { ascending: false }).returns<CommentRow[]>(),
+    supabase.from('formal_quotes').select('*').eq('simulation_id', id).order('created_at', { ascending: false }).returns<FormalQuoteRow[]>(),
   ]);
+
+  const latestQuote = quotes?.[0] ?? null;
 
   const logisticsCostOverFob = simulation.fob_value > 0 ? ((simulation.freight + simulation.local_costs) / simulation.fob_value) * 100 : 0;
   const taxesOverCif =
@@ -163,6 +169,21 @@ export default async function SimulationDetailPage({ params }: { params: Promise
     </div>
   );
 
+  const cotizacion = (
+    <div className="bg-white border border-slate-200 rounded-2xl p-6">
+      {latestQuote ? (
+        <QuoteSummaryCard quote={latestQuote} pdfHref={`/simulaciones/${simulation.id}/cotizacion/pdf`}>
+          {latestQuote.status === 'issued' && <QuoteResponseForm quoteId={latestQuote.id} simulationId={simulation.id} />}
+        </QuoteSummaryCard>
+      ) : (
+        <p className="text-sm text-slate-500">
+          Todavía no tenés una cotización formal. La vas a ver acá una vez que PJM la emita, luego de revisar tu
+          solicitud.
+        </p>
+      )}
+    </div>
+  );
+
   const observaciones = (
     <div className="bg-white border border-slate-200 rounded-2xl p-6">
       <CommentThread comments={comments ?? []} />
@@ -189,7 +210,14 @@ export default async function SimulationDetailPage({ params }: { params: Promise
         </Badge>
       </div>
 
-      <SimulationDetailTabs resumen={resumen} documentos={documentos} checklist={checklist} observaciones={observaciones} observacionesCount={comments?.length} />
+      <SimulationDetailTabs
+        resumen={resumen}
+        documentos={documentos}
+        checklist={checklist}
+        cotizacion={cotizacion}
+        observaciones={observaciones}
+        observacionesCount={comments?.length}
+      />
     </div>
   );
 }

@@ -48,7 +48,7 @@ npm install
 ```bash
 npx supabase login
 npx supabase link --project-ref <tu-project-ref>   # está en la URL del dashboard
-npx supabase db push                                # aplica supabase/migrations/0001_init.sql
+npx supabase db push                                # aplica supabase/migrations/*.sql en orden (0001 a 0004)
 ```
 
 El seed (`supabase/seed.sql`) no corre automáticamente con `db push`. Aplicalo
@@ -61,13 +61,18 @@ npx supabase db execute -f supabase/seed.sql --linked
 **Opción B — SQL Editor del dashboard (sin CLI):**
 
 1. Abrí **SQL Editor → New query**.
-2. Pegá y ejecutá todo el contenido de `supabase/migrations/0001_init.sql`.
-3. En una segunda query, pegá y ejecutá `supabase/seed.sql`.
+2. Pegá y ejecutá, en orden y cada uno en una query separada, el contenido de
+   `supabase/migrations/0001_init.sql`, `0002_ncm_catalog.sql`,
+   `0003_documents_checklist_admin.sql` y `0004_formal_quotes.sql`.
+3. En una última query, pegá y ejecutá `supabase/seed.sql`.
 
-Verificá que haya funcionado: **Table Editor** debería mostrar 10 tablas
-(`profiles`, `companies`, `simulations`, `simulation_items`, `ncm_positions`,
-`tax_parameters`, `logistic_costs`, `documents`, `pjm_requests`, `comments`)
-y `ncm_positions`/`tax_parameters` deberían tener 7 filas cada una.
+Verificá que haya funcionado: **Table Editor** debería mostrar las tablas de
+las cuatro migraciones (`profiles`, `companies`, `simulations`,
+`simulation_items`, `ncm_positions`, `tax_parameters`, `logistic_costs`,
+`documents`, `pjm_requests`, `comments`, `simulation_checklist_items`,
+`audit_logs`, `notifications`, `formal_quotes`, `formal_quote_items`,
+`formal_quote_costs`, `quote_sequences`, entre otras) y `ncm_positions`/
+`tax_parameters` deberían tener 7 filas cada una tras el seed.
 
 ### 4. Configurar `.env.local`
 
@@ -172,9 +177,10 @@ src/
     simulaciones/nueva/       Wizard de nueva simulación
     simulaciones/[id]/        Resultado / detalle de simulación
     simulaciones/[id]/pdf/    PDF preliminar (imprimible)
+    simulaciones/[id]/cotizacion/pdf/   PDF comercial de la cotización formal (imprimible)
     admin/                    Panel interno PJM (solicitudes, usuarios, empresas, catálogo NCM)
-    admin/solicitudes/[id]/   Detalle de solicitud PJM (resumen, documentos, checklist, comentarios)
-    actions/                  Server Actions (auth, company, simulations, admin, ncm, documents, checklist, comments, notifications)
+    admin/solicitudes/[id]/   Detalle de solicitud PJM (resumen, documentos, checklist, cotización, comentarios)
+    actions/                  Server Actions (auth, company, simulations, admin, ncm, documents, checklist, comments, notifications, quotes)
   components/
     layout/                   Header (incluye NotificationsBell), Footer
     ui/                       Primitivas (Card, Button, Field, Badge)
@@ -185,6 +191,7 @@ src/
     checklist/                Checklist de documentación con semáforo (cliente y admin)
     comments/                 Hilo de comentarios internos/visibles para el cliente
     notifications/            Campanita de notificaciones in-app
+    quotes/                   Borrador/edición de cotización (admin), tarjeta resumen y respuesta (cliente)
   lib/
     calculations/              Motor de cálculo (puro, sin UI) + tests
     ncm/                       Normalización/búsqueda/match de NCM, tributos e intervenciones; parseo CSV + tests
@@ -193,22 +200,25 @@ src/
     validations/                Esquemas Zod
     checklist.ts                Cálculo puro del semáforo de checklist + tests
     readyForQuote.ts             Cálculo puro de bloqueos para "listo para cotización" + tests
+    quoteTotals.ts                Cálculo puro de subtotal/impuestos/total de una cotización + tests
     auditLog.ts                  Helper de auditoría (service-role, no lanza errores)
     notify.ts                    Helper de notificaciones in-app (service-role, no lanza errores)
     dal.ts                     Data Access Layer (verificación de sesión/rol)
     errorMessages.ts           Traducción de errores de Supabase a mensajes cortos en español
-  types/                      Tipos de dominio y de la base de datos (incluye documents.ts, Sprint 3)
+  types/                      Tipos de dominio y de la base de datos (incluye documents.ts y quotes.ts)
   proxy.ts                    Protección de rutas + refresco de sesión (ex-middleware.ts)
 supabase/
   migrations/0001_init.sql    Esquema base + RLS + índices
   migrations/0002_ncm_catalog.sql   Catálogo NCM/tributos/intervenciones versionado + RLS (Sprint 2)
   migrations/0003_documents_checklist_admin.sql   Documentos, checklist, comentarios, auditoría, notificaciones + RLS (Sprint 3)
+  migrations/0004_formal_quotes.sql   Cotización comercial formal, numeración, RLS (Sprint 4)
   seed.sql                    Catálogo NCM y parámetros de impuestos de ejemplo (fallback)
 scripts/
   seed-demo-users.mjs         Crea usuarios cliente/admin_pjm de prueba vía Admin API
 QA_CHECKLIST.md               Checklist de pruebas manuales Sprint 1 / 1.5
 SPRINT_2_QA.md                Checklist de pruebas manuales Sprint 2 (NCM/tributos/intervenciones)
 SPRINT_3_QA.md                Checklist de pruebas manuales Sprint 3 (documentos/checklist/panel PJM)
+SPRINT_4_QA.md                Checklist de pruebas manuales Sprint 4 (cotización comercial formal)
 ```
 
 ## Modelo de datos
@@ -338,6 +348,45 @@ simulación enviada a PJM en una solicitud gestionable de punta a punta.
   `cancelled`), separado de `simulations.status` (el estado más simple que
   ve el cliente en su dashboard).
 
+## Cotización comercial formal (Sprint 4)
+
+`supabase/migrations/0004_formal_quotes.sql` agrega un flujo de
+borrador → aprobación interna → emisión → respuesta del cliente para la
+cotización comercial (distinta de la simulación preliminar y de la
+"solicitud" operativa de Sprint 3).
+
+- **Borrador** (`formal_quotes`, `formal_quote_items`, `formal_quote_costs`):
+  desde la pestaña "Cotización" del panel PJM, "Crear borrador de
+  cotización" copia los ítems de mercadería y arma un desglose de costos
+  inicial a partir de la simulación (`src/app/actions/quotes.ts`,
+  `createDraftQuote`). El borrador queda como una copia independiente —
+  editar la simulación después no cambia la cotización — y se puede seguir
+  editando (condiciones de pago, vigencia, notas, exclusiones, ítems,
+  costos) mientras esté en estado `draft`.
+- **Totales**: `subtotal` (mercadería), `taxes_total` (sólo costos
+  categoría "Impuestos") y `total` (mercadería + todos los costos) se
+  recalculan con la función pura `computeQuoteTotals`
+  (`src/lib/quoteTotals.ts`, con tests) cada vez que se agrega/quita un
+  ítem o un costo.
+- **Aprobación e emisión**: "Aprobar borrador" exige al menos un ítem de
+  mercadería y bloquea la edición (representa el paso interno antes de
+  mandarla al cliente). "Emitir y enviar al cliente" llama a la función
+  `issue_formal_quote()` (SECURITY DEFINER): asigna un número
+  correlativo por año (`COT-2026-0001`, tabla `quote_sequences`) de forma
+  atómica para que dos emisiones simultáneas nunca choquen, calcula
+  `valid_until` y notifica al cliente.
+- **Cliente**: la pestaña "Cotización formal" en `/simulaciones/[id]` sólo
+  muestra la cotización una vez `issued` o posterior (RLS: un cliente no
+  puede leer una cotización en `draft`/`approved`). Desde ahí puede
+  aceptarla o rechazarla (con comentario opcional) — sólo esa transición
+  de estado le está permitida por RLS (`formal_quotes_client_respond`),
+  nunca aprobar ni fijar montos.
+- **PDF comercial**: misma decisión que el PDF preliminar del Sprint 1 —
+  ruta imprimible (`/simulaciones/[id]/cotizacion/pdf`, accesible por el
+  dueño de la simulación o por un admin) en vez de sumar una dependencia
+  de renderizado de PDF. Ver "Decisión de alcance: PDF" en
+  `SPRINT_4_QA.md`.
+
 ## Cálculos
 
 Todo vive en `src/lib/calculations/importCostCalculator.ts` (funciones puras,
@@ -375,8 +424,11 @@ npm run test
 
 Corre los tests unitarios con [Vitest](https://vitest.dev/) (`src/**/*.test.ts`,
 sin dependencias de Supabase): normalización y búsqueda de NCM, match de
-tributos/intervenciones, parseo/validación de los importadores CSV y el
-motor de cálculo (`src/lib/calculations/importCostCalculator.ts`).
+tributos/intervenciones, parseo/validación de los importadores CSV, el
+motor de cálculo (`src/lib/calculations/importCostCalculator.ts`), el
+semáforo de checklist y los bloqueos de "listo para cotización"
+(`src/lib/checklist.ts`, `src/lib/readyForQuote.ts`), y los totales de la
+cotización formal (`src/lib/quoteTotals.ts`).
 
 ## QA manual
 
@@ -390,6 +442,9 @@ un proyecto Supabase real:
 - [`SPRINT_3_QA.md`](./SPRINT_3_QA.md) — subida/reemplazo de documentos,
   checklist operativo, panel PJM (KPIs, filtros, ready-for-quote),
   comentarios internos vs. visibles, auditoría, notificaciones, RLS.
+- [`SPRINT_4_QA.md`](./SPRINT_4_QA.md) — borrador/aprobación/emisión de
+  cotización formal, numeración correlativa, respuesta del cliente
+  (aceptar/rechazar), PDF comercial, RLS.
 
 ## Deploy en Vercel
 
@@ -438,11 +493,16 @@ Checklist rápido de "no hay nada hardcodeado":
   documentos el mismo rol que administra todo el panel).
 - Documentos: OCR/extracción automática de datos de invoice, vencimiento
   automático de documentos (`status = 'expired'` hoy no lo dispara nada).
-- PDF preliminar con diseño más avanzado (hoy es una vista imprimible desde
-  el navegador) y envío por email (los adapters de notificación son
-  in-app únicamente por ahora).
+- PDFs (preliminar y comercial) con diseño más avanzado (hoy son vistas
+  imprimibles desde el navegador) y envío por email (los adapters de
+  notificación son in-app únicamente por ahora).
 - Selector de usuario real para "Asignado a" en el panel PJM (hoy sólo hay
-  autoasignación); un endpoint/cron que dispare
-  `expireFormalQuotes`-equivalente para documentos vencidos.
+  autoasignación); un cron que expire documentos vencidos y cotizaciones
+  formales (`formal_quotes.status = 'expired'` cuando pasa `valid_until`,
+  hoy no lo dispara nada automáticamente).
+- Cotización formal: versionado explícito (recotizar sobre una cotización
+  rechazada creando una v2 en vez de un borrador nuevo desde cero), y
+  aprobación por un segundo rol/usuario distinto de quien arma el borrador
+  (hoy cualquier `admin_pjm` puede aprobar su propio borrador).
 - Integraciones futuras (fuera de alcance de este MVP): ARCA, Banco Nación /
   MULC, navieras, pagos, IA clasificadora de NCM.

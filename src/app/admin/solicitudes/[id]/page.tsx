@@ -13,6 +13,9 @@ import { RequestStatusActions } from '@/components/admin/RequestStatusActions';
 import { AdminRequestDetailTabs } from '@/components/admin/AdminRequestDetailTabs';
 import { AdminDocumentReviewCard } from '@/components/admin/AdminDocumentReviewCard';
 import { ChecklistPanel } from '@/components/checklist/ChecklistPanel';
+import { QuoteBuilder } from '@/components/quotes/QuoteBuilder';
+import { QuoteSummaryCard } from '@/components/quotes/QuoteSummaryCard';
+import { CreateQuoteButton } from '@/components/quotes/CreateQuoteButton';
 import { NCM_STATUS_TONE } from '@/lib/constants/statusStyles';
 import { NCM_STATUS_LABELS, type NCMStatus } from '@/types/ncm';
 import type { SimulationStatus, SimulationDocumentStatus } from '@/types/simulation';
@@ -26,6 +29,9 @@ import type {
   CommentRow,
   DocumentRow,
   SimulationChecklistItemRow,
+  FormalQuoteRow,
+  FormalQuoteItemRow,
+  FormalQuoteCostRow,
 } from '@/types/database';
 
 export default async function AdminRequestDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -36,7 +42,7 @@ export default async function AdminRequestDetailPage({ params }: { params: Promi
   const { data: simulation } = await supabase.from('simulations').select('*').eq('id', id).maybeSingle<SimulationRow>();
   if (!simulation) notFound();
 
-  const [{ data: items }, { data: profile }, { data: company }, { data: request }, { data: documents }, { data: checklistItems }] = await Promise.all([
+  const [{ data: items }, { data: profile }, { data: company }, { data: request }, { data: documents }, { data: checklistItems }, { data: quotes }] = await Promise.all([
     supabase.from('simulation_items').select('*').eq('simulation_id', id).returns<SimulationItemRow[]>(),
     supabase.from('profiles').select('*').eq('id', simulation.user_id).maybeSingle<ProfileRow>(),
     simulation.company_id
@@ -45,7 +51,20 @@ export default async function AdminRequestDetailPage({ params }: { params: Promi
     supabase.from('pjm_requests').select('*').eq('simulation_id', id).maybeSingle<PjmRequestRow>(),
     supabase.from('documents').select('*').eq('simulation_id', id).neq('status', 'replaced').order('uploaded_at', { ascending: false }).returns<DocumentRow[]>(),
     supabase.from('simulation_checklist_items').select('*').eq('simulation_id', id).returns<SimulationChecklistItemRow[]>(),
+    supabase.from('formal_quotes').select('*').eq('simulation_id', id).order('created_at', { ascending: false }).returns<FormalQuoteRow[]>(),
   ]);
+
+  const latestQuote = quotes?.[0] ?? null;
+  let quoteItems: FormalQuoteItemRow[] = [];
+  let quoteCosts: FormalQuoteCostRow[] = [];
+  if (latestQuote) {
+    const [{ data: qi }, { data: qc }] = await Promise.all([
+      supabase.from('formal_quote_items').select('*').eq('formal_quote_id', latestQuote.id).order('sort_order').returns<FormalQuoteItemRow[]>(),
+      supabase.from('formal_quote_costs').select('*').eq('formal_quote_id', latestQuote.id).order('sort_order').returns<FormalQuoteCostRow[]>(),
+    ]);
+    quoteItems = qi ?? [];
+    quoteCosts = qc ?? [];
+  }
 
   const { data: comments } = await supabase
     .from('comments')
@@ -166,6 +185,23 @@ export default async function AdminRequestDetailPage({ params }: { params: Promi
     </div>
   );
 
+  const cotizacion = (
+    <div className="bg-white border border-slate-200 rounded-2xl p-6">
+      {latestQuote ? (
+        latestQuote.status === 'draft' || latestQuote.status === 'approved' ? (
+          <QuoteBuilder quote={latestQuote} items={quoteItems} costs={quoteCosts} simulationId={simulation.id} />
+        ) : (
+          <QuoteSummaryCard quote={latestQuote} pdfHref={`/simulaciones/${simulation.id}/cotizacion/pdf`} />
+        )
+      ) : (
+        <div className="text-center py-8">
+          <p className="text-sm text-slate-500 mb-4">Todavía no hay una cotización formal para esta solicitud.</p>
+          <CreateQuoteButton simulationId={simulation.id} requestId={request?.id ?? null} />
+        </div>
+      )}
+    </div>
+  );
+
   const comentarios = (
     <div className="bg-white border border-slate-200 rounded-2xl p-6">
       <h2 className="text-sm font-bold text-slate-900 uppercase mb-4">Comentarios</h2>
@@ -195,7 +231,14 @@ export default async function AdminRequestDetailPage({ params }: { params: Promi
         </Badge>
       </div>
 
-      <AdminRequestDetailTabs resumen={resumen} documentos={documentos} checklist={checklist} comentarios={comentarios} documentosCount={documents?.length} />
+      <AdminRequestDetailTabs
+        resumen={resumen}
+        documentos={documentos}
+        checklist={checklist}
+        cotizacion={cotizacion}
+        comentarios={comentarios}
+        documentosCount={documents?.length}
+      />
     </div>
   );
 }

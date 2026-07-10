@@ -1,6 +1,17 @@
 import type { BadgeTone } from '@/components/ui/Badge';
 import type { SimulationStatus, SimulationDocumentStatus } from '@/types/simulation';
 import type { NCMStatus, InterventionRisk } from '@/types/ncm';
+import type { FormalQuoteStatus } from '@/types/quotes';
+
+export const FORMAL_QUOTE_STATUS_TONE: Record<FormalQuoteStatus, BadgeTone> = {
+  draft: 'slate',
+  approved: 'blue',
+  issued: 'indigo',
+  accepted: 'emerald',
+  rejected: 'rose',
+  expired: 'amber',
+  cancelled: 'slate',
+};
 
 export const SIMULATION_STATUS_TONE: Record<SimulationStatus, BadgeTone> = {
   draft: 'slate',
