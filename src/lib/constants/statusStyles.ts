@@ -1,7 +1,6 @@
 import type { BadgeTone } from '@/components/ui/Badge';
-import type { SimulationStatus } from '@/types/simulation';
+import type { SimulationStatus, SimulationDocumentStatus } from '@/types/simulation';
 import type { NCMStatus, InterventionRisk } from '@/types/ncm';
-import type { DocumentStatus } from '@/types/simulation';
 
 export const SIMULATION_STATUS_TONE: Record<SimulationStatus, BadgeTone> = {
   draft: 'slate',
@@ -22,7 +21,7 @@ export const NCM_STATUS_TONE: Record<NCMStatus, BadgeTone> = {
   requiere_revision: 'rose',
 };
 
-export const DOCUMENT_STATUS_TONE: Record<DocumentStatus, BadgeTone> = {
+export const DOCUMENT_STATUS_TONE: Record<SimulationDocumentStatus, BadgeTone> = {
   incomplete: 'rose',
   under_review: 'amber',
   observed: 'amber',
@@ -41,7 +40,7 @@ export const RISK_SEMAPHORE_LABEL: Record<InterventionRisk, string> = {
   rojo: 'No embarcar todavía',
 };
 
-export const DOCUMENT_STATUS_RISK: Record<DocumentStatus, InterventionRisk> = {
+export const DOCUMENT_STATUS_RISK: Record<SimulationDocumentStatus, InterventionRisk> = {
   approved: 'verde',
   under_review: 'amarillo',
   observed: 'amarillo',

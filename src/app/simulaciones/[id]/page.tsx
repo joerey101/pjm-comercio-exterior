@@ -8,10 +8,16 @@ import { formatMoney } from '@/lib/formatMoney';
 import { SIMULATION_STATUS_TONE, NCM_STATUS_TONE, DOCUMENT_STATUS_RISK, RISK_SEMAPHORE_CLASSES, RISK_SEMAPHORE_LABEL } from '@/lib/constants/statusStyles';
 import { SIMULATION_STATUS_LABELS } from '@/types/simulation';
 import { NCM_STATUS_LABELS } from '@/types/ncm';
-import type { SimulationRow, SimulationItemRow } from '@/types/database';
-import type { SimulationStatus, DocumentStatus } from '@/types/simulation';
+import type { SimulationRow, SimulationItemRow, DocumentRow, SimulationChecklistItemRow, CommentRow } from '@/types/database';
+import type { SimulationStatus, SimulationDocumentStatus } from '@/types/simulation';
+import type { ChecklistSemaphore, DocumentType, DocumentStatus } from '@/types/documents';
 import type { NCMStatus } from '@/types/ncm';
 import { RequestFormalQuoteButton } from '@/components/simulation/RequestFormalQuoteButton';
+import { SimulationDetailTabs } from '@/components/simulation/SimulationDetailTabs';
+import { DocumentUploadForm } from '@/components/documents/DocumentUploadForm';
+import { DocumentList } from '@/components/documents/DocumentList';
+import { ChecklistPanel } from '@/components/checklist/ChecklistPanel';
+import { CommentThread } from '@/components/comments/CommentThread';
 
 export default async function SimulationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -26,11 +32,12 @@ export default async function SimulationDetailPage({ params }: { params: Promise
 
   if (!simulation || simulation.user_id !== user.id) notFound();
 
-  const { data: items } = await supabase
-    .from('simulation_items')
-    .select('*')
-    .eq('simulation_id', id)
-    .returns<SimulationItemRow[]>();
+  const [{ data: items }, { data: documents }, { data: checklistItems }, { data: comments }] = await Promise.all([
+    supabase.from('simulation_items').select('*').eq('simulation_id', id).returns<SimulationItemRow[]>(),
+    supabase.from('documents').select('*').eq('simulation_id', id).neq('status', 'replaced').order('uploaded_at', { ascending: false }).returns<DocumentRow[]>(),
+    supabase.from('simulation_checklist_items').select('*').eq('simulation_id', id).returns<SimulationChecklistItemRow[]>(),
+    supabase.from('comments').select('*').eq('simulation_id', id).eq('visibility', 'client').order('created_at', { ascending: false }).returns<CommentRow[]>(),
+  ]);
 
   const logisticsCostOverFob = simulation.fob_value > 0 ? ((simulation.freight + simulation.local_costs) / simulation.fob_value) * 100 : 0;
   const taxesOverCif =
@@ -38,29 +45,11 @@ export default async function SimulationDetailPage({ params }: { params: Promise
       ? ((simulation.customs_duty + simulation.statistical_rate + simulation.fiscal_credits) / simulation.cif_value) * 100
       : 0;
 
-  const risk = DOCUMENT_STATUS_RISK[simulation.document_status as DocumentStatus] ?? 'rojo';
+  const risk = DOCUMENT_STATUS_RISK[simulation.document_status as SimulationDocumentStatus] ?? 'rojo';
   const canRequestQuote = simulation.status === 'draft' || simulation.status === 'completed';
 
-  return (
-    <div className="max-w-6xl mx-auto px-4 py-10 w-full">
-      <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-indigo-600 mb-6 no-print">
-        <ArrowLeft className="w-4 h-4" />
-        Volver al dashboard
-      </Link>
-
-      <div className="flex flex-wrap items-start justify-between gap-4 mb-8">
-        <div>
-          <h1 className="text-2xl font-extrabold text-slate-900">{simulation.name}</h1>
-          <p className="text-sm text-slate-500 mt-1">
-            {simulation.origin_country} → {simulation.final_destination || simulation.destination_port} ·{' '}
-            {simulation.incoterm} · Creada el {new Date(simulation.created_at).toLocaleDateString('es-AR')}
-          </p>
-        </div>
-        <Badge tone={SIMULATION_STATUS_TONE[simulation.status as SimulationStatus] ?? 'slate'}>
-          {SIMULATION_STATUS_LABELS[simulation.status as SimulationStatus] ?? simulation.status}
-        </Badge>
-      </div>
-
+  const resumen = (
+    <>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 mb-8">
         <ResultCard label="Valor FOB" value={formatMoney(simulation.fob_value, simulation.currency)} />
         <ResultCard label="Valor CIF estimado" value={formatMoney(simulation.cif_value, simulation.currency)} />
@@ -138,10 +127,69 @@ export default async function SimulationDetailPage({ params }: { params: Promise
         {canRequestQuote && <RequestFormalQuoteButton simulationId={simulation.id} />}
         {!canRequestQuote && (
           <span className="text-xs text-slate-500">
-            Esta simulación ya fue enviada a PJM. Seguí su estado desde el dashboard.
+            Esta simulación ya fue enviada a PJM. Seguí su estado desde el checklist y las observaciones de PJM.
           </span>
         )}
       </div>
+    </>
+  );
+
+  const documentos = (
+    <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-6">
+      <DocumentUploadForm simulationId={simulation.id} />
+      <DocumentList
+        simulationId={simulation.id}
+        documents={(documents ?? []).map((d) => ({
+          id: d.id,
+          documentType: d.document_type as DocumentType,
+          fileName: d.file_name,
+          filePath: d.file_url,
+          status: d.status as DocumentStatus,
+          reviewNotes: d.review_notes,
+          uploadedAt: d.uploaded_at,
+        }))}
+      />
+    </div>
+  );
+
+  const checklist = (
+    <div className="bg-white border border-slate-200 rounded-2xl p-6">
+      <ChecklistPanel
+        items={checklistItems ?? []}
+        semaphore={simulation.checklist_status as ChecklistSemaphore}
+        mode="client"
+        simulationId={simulation.id}
+      />
+    </div>
+  );
+
+  const observaciones = (
+    <div className="bg-white border border-slate-200 rounded-2xl p-6">
+      <CommentThread comments={comments ?? []} />
+    </div>
+  );
+
+  return (
+    <div className="max-w-6xl mx-auto px-4 py-10 w-full">
+      <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-indigo-600 mb-6 no-print">
+        <ArrowLeft className="w-4 h-4" />
+        Volver al dashboard
+      </Link>
+
+      <div className="flex flex-wrap items-start justify-between gap-4 mb-8">
+        <div>
+          <h1 className="text-2xl font-extrabold text-slate-900">{simulation.name}</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            {simulation.origin_country} → {simulation.final_destination || simulation.destination_port} ·{' '}
+            {simulation.incoterm} · Creada el {new Date(simulation.created_at).toLocaleDateString('es-AR')}
+          </p>
+        </div>
+        <Badge tone={SIMULATION_STATUS_TONE[simulation.status as SimulationStatus] ?? 'slate'}>
+          {SIMULATION_STATUS_LABELS[simulation.status as SimulationStatus] ?? simulation.status}
+        </Badge>
+      </div>
+
+      <SimulationDetailTabs resumen={resumen} documentos={documentos} checklist={checklist} observaciones={observaciones} observacionesCount={comments?.length} />
     </div>
   );
 }

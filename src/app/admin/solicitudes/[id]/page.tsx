@@ -7,11 +7,26 @@ import { Badge } from '@/components/ui/Badge';
 import { formatMoney } from '@/lib/formatMoney';
 import { StatusControls } from '@/components/admin/StatusControls';
 import { CommentForm } from '@/components/admin/CommentForm';
+import { CommentThread } from '@/components/comments/CommentThread';
 import { NcmValidationCard } from '@/components/admin/NcmValidationCard';
+import { RequestStatusActions } from '@/components/admin/RequestStatusActions';
+import { AdminRequestDetailTabs } from '@/components/admin/AdminRequestDetailTabs';
+import { AdminDocumentReviewCard } from '@/components/admin/AdminDocumentReviewCard';
+import { ChecklistPanel } from '@/components/checklist/ChecklistPanel';
 import { NCM_STATUS_TONE } from '@/lib/constants/statusStyles';
 import { NCM_STATUS_LABELS, type NCMStatus } from '@/types/ncm';
-import type { SimulationStatus, DocumentStatus } from '@/types/simulation';
-import type { SimulationRow, SimulationItemRow, ProfileRow, CompanyRow, PjmRequestRow, CommentRow } from '@/types/database';
+import type { SimulationStatus, SimulationDocumentStatus } from '@/types/simulation';
+import type { ChecklistSemaphore, PjmRequestStatus, RequestPriority, DocumentType, DocumentStatus } from '@/types/documents';
+import type {
+  SimulationRow,
+  SimulationItemRow,
+  ProfileRow,
+  CompanyRow,
+  PjmRequestRow,
+  CommentRow,
+  DocumentRow,
+  SimulationChecklistItemRow,
+} from '@/types/database';
 
 export default async function AdminRequestDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -21,52 +36,54 @@ export default async function AdminRequestDetailPage({ params }: { params: Promi
   const { data: simulation } = await supabase.from('simulations').select('*').eq('id', id).maybeSingle<SimulationRow>();
   if (!simulation) notFound();
 
-  const [{ data: items }, { data: profile }, { data: company }, { data: request }] = await Promise.all([
+  const [{ data: items }, { data: profile }, { data: company }, { data: request }, { data: documents }, { data: checklistItems }] = await Promise.all([
     supabase.from('simulation_items').select('*').eq('simulation_id', id).returns<SimulationItemRow[]>(),
     supabase.from('profiles').select('*').eq('id', simulation.user_id).maybeSingle<ProfileRow>(),
     simulation.company_id
       ? supabase.from('companies').select('*').eq('id', simulation.company_id).maybeSingle<CompanyRow>()
       : Promise.resolve({ data: null }),
     supabase.from('pjm_requests').select('*').eq('simulation_id', id).maybeSingle<PjmRequestRow>(),
+    supabase.from('documents').select('*').eq('simulation_id', id).neq('status', 'replaced').order('uploaded_at', { ascending: false }).returns<DocumentRow[]>(),
+    supabase.from('simulation_checklist_items').select('*').eq('simulation_id', id).returns<SimulationChecklistItemRow[]>(),
   ]);
 
-  const { data: comments } = request
-    ? await supabase
-        .from('comments')
-        .select('*')
-        .eq('request_id', request.id)
-        .order('created_at', { ascending: false })
-        .returns<CommentRow[]>()
-    : { data: [] as CommentRow[] };
+  const { data: comments } = await supabase
+    .from('comments')
+    .select('*')
+    .eq('simulation_id', id)
+    .order('created_at', { ascending: false })
+    .returns<CommentRow[]>();
 
-  return (
-    <div className="max-w-5xl mx-auto px-4 py-10 w-full">
-      <Link href="/admin" className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-indigo-600 mb-6">
-        <ArrowLeft className="w-4 h-4" />
-        Volver a solicitudes
-      </Link>
+  let assignedToLabel: string | null = null;
+  if (request?.assigned_to) {
+    const { data: assignee } = await supabase.from('profiles').select('full_name').eq('id', request.assigned_to).maybeSingle();
+    assignedToLabel = assignee?.full_name ?? null;
+  }
 
-      <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-extrabold text-slate-900">{simulation.name}</h1>
-          <p className="text-sm text-slate-500 mt-1">
-            {profile?.full_name} ({profile?.email}) · {company?.business_name || 'Sin empresa cargada'}
-          </p>
-        </div>
-        <Badge tone={NCM_STATUS_TONE[simulation.ncm_status as NCMStatus] ?? 'slate'}>
-          {NCM_STATUS_LABELS[simulation.ncm_status as NCMStatus] ?? simulation.ncm_status}
-        </Badge>
-      </div>
-
+  const resumen = (
+    <>
       <div className="bg-white border border-slate-200 rounded-2xl p-6 mb-6">
-        <h2 className="text-sm font-bold text-slate-900 uppercase mb-4">Gestión de estados</h2>
+        <h2 className="text-sm font-bold text-slate-900 uppercase mb-4">Datos de la simulación</h2>
         <StatusControls
           simulationId={simulation.id}
           status={simulation.status as SimulationStatus}
           ncmStatus={simulation.ncm_status as NCMStatus}
-          documentStatus={simulation.document_status as DocumentStatus}
+          documentStatus={simulation.document_status as SimulationDocumentStatus}
         />
       </div>
+
+      {request && (
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 mb-6">
+          <h2 className="text-sm font-bold text-slate-900 uppercase mb-4">Gestión operativa de la solicitud</h2>
+          <RequestStatusActions
+            requestId={request.id}
+            simulationId={simulation.id}
+            status={request.status as PjmRequestStatus}
+            priority={request.priority as RequestPriority}
+            assignedToLabel={assignedToLabel}
+          />
+        </div>
+      )}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
         <SummaryStat label="FOB" value={formatMoney(simulation.fob_value, simulation.currency)} />
@@ -75,8 +92,8 @@ export default async function AdminRequestDetailPage({ params }: { params: Promi
         <SummaryStat label="Caja necesaria" value={formatMoney(simulation.cash_required, simulation.currency)} highlight />
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 mb-6">
-        <h2 className="text-sm font-bold text-slate-900 uppercase mb-4">Mercadería</h2>
+      <div className="bg-white border border-slate-200 rounded-2xl p-6">
+        <h2 className="text-sm font-bold text-slate-900 uppercase mb-4">Mercadería y validación NCM</h2>
         <div className="overflow-x-auto mb-4">
           <table className="w-full text-left text-sm">
             <thead className="text-[11px] font-bold text-slate-500 uppercase border-b border-slate-200">
@@ -100,7 +117,6 @@ export default async function AdminRequestDetailPage({ params }: { params: Promi
           </table>
         </div>
 
-        <h3 className="text-xs font-bold text-slate-900 uppercase mb-3">Validación NCM por ítem</h3>
         <div className="space-y-3">
           {(items ?? []).map((item) => (
             <NcmValidationCard
@@ -117,26 +133,69 @@ export default async function AdminRequestDetailPage({ params }: { params: Promi
           {(!items || items.length === 0) && <p className="text-xs text-slate-400">Sin ítems cargados.</p>}
         </div>
       </div>
+    </>
+  );
 
-      {request && (
-        <div className="bg-white border border-slate-200 rounded-2xl p-6">
-          <h2 className="text-sm font-bold text-slate-900 uppercase mb-4">Comentarios internos</h2>
-          <CommentForm requestId={request.id} />
-          <div className="mt-5 space-y-3">
-            {(comments ?? []).map((c) => (
-              <div key={c.id} className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm">
-                <p className="text-slate-700">{c.comment}</p>
-                <span className="text-[10px] text-slate-400 uppercase font-bold">
-                  {new Date(c.created_at).toLocaleString('es-AR')}
-                </span>
-              </div>
-            ))}
-            {(!comments || comments.length === 0) && (
-              <p className="text-xs text-slate-400">Sin comentarios internos todavía.</p>
-            )}
-          </div>
+  const documentos = (
+    <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-3">
+      {(documents ?? []).map((doc) => (
+        <AdminDocumentReviewCard
+          key={doc.id}
+          documentId={doc.id}
+          simulationId={simulation.id}
+          documentType={doc.document_type as DocumentType}
+          fileName={doc.file_name}
+          filePath={doc.file_url}
+          status={doc.status as DocumentStatus}
+          reviewNotes={doc.review_notes}
+          uploadedAt={doc.uploaded_at}
+        />
+      ))}
+      {(!documents || documents.length === 0) && <p className="text-sm text-slate-400">El cliente todavía no subió documentos.</p>}
+    </div>
+  );
+
+  const checklist = (
+    <div className="bg-white border border-slate-200 rounded-2xl p-6">
+      <ChecklistPanel
+        items={checklistItems ?? []}
+        semaphore={simulation.checklist_status as ChecklistSemaphore}
+        mode="admin"
+        simulationId={simulation.id}
+      />
+    </div>
+  );
+
+  const comentarios = (
+    <div className="bg-white border border-slate-200 rounded-2xl p-6">
+      <h2 className="text-sm font-bold text-slate-900 uppercase mb-4">Comentarios</h2>
+      {request && <CommentForm requestId={request.id} simulationId={simulation.id} />}
+      <div className="mt-5">
+        <CommentThread comments={comments ?? []} />
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="max-w-5xl mx-auto px-4 py-10 w-full">
+      <Link href="/admin" className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-indigo-600 mb-6">
+        <ArrowLeft className="w-4 h-4" />
+        Volver a solicitudes
+      </Link>
+
+      <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-extrabold text-slate-900">{simulation.name}</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            {profile?.full_name} ({profile?.email}) · {company?.business_name || 'Sin empresa cargada'}
+          </p>
         </div>
-      )}
+        <Badge tone={NCM_STATUS_TONE[simulation.ncm_status as NCMStatus] ?? 'slate'}>
+          {NCM_STATUS_LABELS[simulation.ncm_status as NCMStatus] ?? simulation.ncm_status}
+        </Badge>
+      </div>
+
+      <AdminRequestDetailTabs resumen={resumen} documentos={documentos} checklist={checklist} comentarios={comentarios} documentosCount={documents?.length} />
     </div>
   );
 }

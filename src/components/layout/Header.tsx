@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Globe2 } from 'lucide-react';
 import { getCurrentProfile } from '@/lib/dal';
 import { logout } from '@/app/actions/auth';
+import { NotificationsBell } from '@/components/notifications/NotificationsBell';
 
 export async function Header() {
   const profile = await getCurrentProfile();
@@ -51,6 +52,7 @@ export async function Header() {
               <Link href="/perfil" className="text-slate-300 hover:text-white transition-colors">
                 Perfil
               </Link>
+              <NotificationsBell />
               <form action={logout}>
                 <button className="bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-lg text-slate-200 transition-colors">
                   Cerrar sesión
@@ -63,6 +65,7 @@ export async function Header() {
               <Link href="/admin" className="text-slate-300 hover:text-white transition-colors">
                 Panel PJM
               </Link>
+              <NotificationsBell />
               <form action={logout}>
                 <button className="bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-lg text-slate-200 transition-colors">
                   Cerrar sesión

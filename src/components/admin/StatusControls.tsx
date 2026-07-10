@@ -3,7 +3,7 @@
 import { useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { updateSimulationStatus, updateNcmStatus, updateDocumentStatus } from '@/app/actions/admin';
-import { SIMULATION_STATUS_LABELS, type SimulationStatus, DOCUMENT_STATUS_LABELS, type DocumentStatus } from '@/types/simulation';
+import { SIMULATION_STATUS_LABELS, type SimulationStatus, SIMULATION_DOCUMENT_STATUS_LABELS, type SimulationDocumentStatus } from '@/types/simulation';
 import { NCM_STATUS_LABELS, type NCMStatus } from '@/types/ncm';
 import { selectClass } from '@/components/ui/Field';
 
@@ -16,7 +16,7 @@ export function StatusControls({
   simulationId: string;
   status: SimulationStatus;
   ncmStatus: NCMStatus;
-  documentStatus: DocumentStatus;
+  documentStatus: SimulationDocumentStatus;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -72,9 +72,9 @@ export function StatusControls({
           className={selectClass}
           value={documentStatus}
           disabled={isPending}
-          onChange={(e) => handle(() => updateDocumentStatus(simulationId, e.target.value as DocumentStatus))}
+          onChange={(e) => handle(() => updateDocumentStatus(simulationId, e.target.value as SimulationDocumentStatus))}
         >
-          {Object.entries(DOCUMENT_STATUS_LABELS).map(([k, label]) => (
+          {Object.entries(SIMULATION_DOCUMENT_STATUS_LABELS).map(([k, label]) => (
             <option key={k} value={k}>
               {label}
             </option>

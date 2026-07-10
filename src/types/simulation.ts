@@ -28,32 +28,12 @@ export const SIMULATION_STATUS_LABELS: Record<SimulationStatus, string> = {
   closed: 'Cerrada',
 };
 
-export type DocumentType =
-  | 'invoice'
-  | 'proforma'
-  | 'packing_list'
-  | 'bl'
-  | 'awb'
-  | 'technical_sheet'
-  | 'certificate_of_origin'
-  | 'authorization'
-  | 'other';
+// Per-document type/status (Sprint 3) live in './documents' — import from
+// there directly. This is the coarser rollup on `simulations.document_status`
+// itself (distinct from any single document's lifecycle).
+export type SimulationDocumentStatus = 'incomplete' | 'under_review' | 'observed' | 'approved';
 
-export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
-  invoice: 'Invoice',
-  proforma: 'Proforma',
-  packing_list: 'Packing list',
-  bl: 'BL (Bill of Lading)',
-  awb: 'AWB (Air Waybill)',
-  technical_sheet: 'Ficha técnica',
-  certificate_of_origin: 'Certificado de origen',
-  authorization: 'Autorización',
-  other: 'Otros',
-};
-
-export type DocumentStatus = 'incomplete' | 'under_review' | 'observed' | 'approved';
-
-export const DOCUMENT_STATUS_LABELS: Record<DocumentStatus, string> = {
+export const SIMULATION_DOCUMENT_STATUS_LABELS: Record<SimulationDocumentStatus, string> = {
   incomplete: 'Incompleto',
   under_review: 'En revisión',
   observed: 'Observado',

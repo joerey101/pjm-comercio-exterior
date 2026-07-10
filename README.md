@@ -173,31 +173,42 @@ src/
     simulaciones/[id]/        Resultado / detalle de simulación
     simulaciones/[id]/pdf/    PDF preliminar (imprimible)
     admin/                    Panel interno PJM (solicitudes, usuarios, empresas, catálogo NCM)
-    actions/                  Server Actions (auth, company, simulations, admin, ncm)
+    admin/solicitudes/[id]/   Detalle de solicitud PJM (resumen, documentos, checklist, comentarios)
+    actions/                  Server Actions (auth, company, simulations, admin, ncm, documents, checklist, comments, notifications)
   components/
-    layout/                   Header, Footer
+    layout/                   Header (incluye NotificationsBell), Footer
     ui/                       Primitivas (Card, Button, Field, Badge)
-    simulation/                Pasos del wizard + tarjetas de resultado
-    admin/                    Controles del panel PJM (estados, comentarios, importador, validación NCM)
+    simulation/                Pasos del wizard, tarjetas de resultado, SimulationDetailTabs
+    admin/                    Controles del panel PJM (estados, comentarios, importador, validación NCM, AdminRequestDetailTabs)
     ncm/                      Buscador NCM, tarjetas de detalle/tributos/intervenciones (cliente y admin)
+    documents/                Carga, listado y revisión de documentos (cliente y admin)
+    checklist/                Checklist de documentación con semáforo (cliente y admin)
+    comments/                 Hilo de comentarios internos/visibles para el cliente
+    notifications/            Campanita de notificaciones in-app
   lib/
     calculations/              Motor de cálculo (puro, sin UI) + tests
     ncm/                       Normalización/búsqueda/match de NCM, tributos e intervenciones; parseo CSV + tests
-    supabase/                  Clientes de Supabase (browser/server) + sesión de proxy
-    constants/                 Ubicaciones, tarifas de referencia, catálogo NCM de ejemplo (fallback), estilos de estado
+    supabase/                  Clientes de Supabase (browser/server/service-role) + sesión de proxy
+    constants/                 Ubicaciones, tarifas de referencia, catálogo NCM de ejemplo (fallback), estilos de estado, checklist por defecto
     validations/                Esquemas Zod
+    checklist.ts                Cálculo puro del semáforo de checklist + tests
+    readyForQuote.ts             Cálculo puro de bloqueos para "listo para cotización" + tests
+    auditLog.ts                  Helper de auditoría (service-role, no lanza errores)
+    notify.ts                    Helper de notificaciones in-app (service-role, no lanza errores)
     dal.ts                     Data Access Layer (verificación de sesión/rol)
     errorMessages.ts           Traducción de errores de Supabase a mensajes cortos en español
-  types/                      Tipos de dominio y de la base de datos
+  types/                      Tipos de dominio y de la base de datos (incluye documents.ts, Sprint 3)
   proxy.ts                    Protección de rutas + refresco de sesión (ex-middleware.ts)
 supabase/
   migrations/0001_init.sql    Esquema base + RLS + índices
   migrations/0002_ncm_catalog.sql   Catálogo NCM/tributos/intervenciones versionado + RLS (Sprint 2)
+  migrations/0003_documents_checklist_admin.sql   Documentos, checklist, comentarios, auditoría, notificaciones + RLS (Sprint 3)
   seed.sql                    Catálogo NCM y parámetros de impuestos de ejemplo (fallback)
 scripts/
   seed-demo-users.mjs         Crea usuarios cliente/admin_pjm de prueba vía Admin API
 QA_CHECKLIST.md               Checklist de pruebas manuales Sprint 1 / 1.5
 SPRINT_2_QA.md                Checklist de pruebas manuales Sprint 2 (NCM/tributos/intervenciones)
+SPRINT_3_QA.md                Checklist de pruebas manuales Sprint 3 (documentos/checklist/panel PJM)
 ```
 
 ## Modelo de datos
@@ -275,6 +286,58 @@ intervención parametrizada. Si no hay tasas activas para el código, el
 cálculo se marca con advertencia (`simulations.has_tax_warning`) en vez de
 usar un valor inventado.
 
+## Documentos, checklist y panel PJM (Sprint 3)
+
+`supabase/migrations/0003_documents_checklist_admin.sql` convierte cada
+simulación enviada a PJM en una solicitud gestionable de punta a punta.
+
+- **Documentos** (`documents`, extendida desde Sprint 1): el cliente sube el
+  archivo directo a Storage desde el navegador
+  (`src/components/documents/DocumentUploadForm.tsx`, bucket
+  `simulation-documents`, path `{simulation_id}/{document_type}/{timestamp}-{filename}`)
+  y sólo después inserta la fila de metadata vía Server Action — así el
+  archivo nunca pasa por el servidor de Next.js. Un cliente **no puede**
+  actualizar el `status` de un documento directamente (sólo `admin_pjm`
+  tiene policy de `update`); "reemplazar un documento observado" sube un
+  archivo nuevo y llama a la función `replace_document()` (SECURITY DEFINER,
+  valida que el que reemplaza sea el dueño de la simulación) para marcar el
+  viejo como `replaced` sin darle al cliente permisos de escritura más
+  amplios.
+- **Checklist operativo** (`simulation_checklist_items`): se crea
+  automáticamente con los 25 ítems de `src/lib/constants/defaultChecklist.ts`
+  la primera vez que se solicita cotización formal. El semáforo
+  (`simulations.checklist_status`: draft/red/yellow/green) se recalcula con
+  la función pura `computeChecklistStatus` (`src/lib/checklist.ts`, con
+  tests) cada vez que cambia un ítem — rojo si hay un ítem *bloqueante* sin
+  aprobar (invoice, packing list, BL/AWB), amarillo si hay otros ítems
+  requeridos pendientes/observados, verde si todo lo requerido está
+  aprobado.
+- **Comentarios** (`comments`, extendida desde Sprint 1): ahora distinguen
+  `visibility` (`internal` | `client`) y pueden colgar de un documento o de
+  un ítem del checklist además de una solicitud. Sólo `admin_pjm` puede
+  insertar comentarios (RLS); un comentario `client` dispara además una
+  notificación al dueño de la simulación.
+- **Auditoría** (`audit_logs`) y **notificaciones** (`notifications`): toda
+  acción relevante (subida/revisión de documento, cambio de checklist,
+  cambio de estado de la solicitud, validación NCM, comentario) queda
+  registrada. Ambas tablas se escriben con el cliente `service_role`
+  (`src/lib/auditLog.ts`, `src/lib/notify.ts`) porque tanto clientes como
+  admins disparan eventos auditables/notificables entre sí, y la RLS de
+  lectura de `audit_logs` es admin-only.
+- **Panel PJM robusto** (`/admin`): KPIs por estado operativo, filtros por
+  estado/prioridad/NCM pendiente (`?status=&priority=&ncmPending=1`), y el
+  detalle de cada solicitud (`/admin/solicitudes/[id]`) en pestañas
+  (Resumen / Documentos / Checklist / Comentarios) con gestión de estado,
+  prioridad, asignación y el botón "Marcar listo para cotización", que
+  bloquea con la lista de motivos (`computeReadyForQuoteBlockers`,
+  `src/lib/readyForQuote.ts`, con tests) salvo override explícito con
+  comentario obligatorio.
+- `pjm_requests.status` pasó a un dominio operativo propio (`received` →
+  `in_review`/`ncm_review`/`tax_review`/`logistics_review` →
+  `waiting_client` → `ready_for_quote` → `formal_quote_sent` → `closed`/
+  `cancelled`), separado de `simulations.status` (el estado más simple que
+  ve el cliente en su dashboard).
+
 ## Cálculos
 
 Todo vive en `src/lib/calculations/importCostCalculator.ts` (funciones puras,
@@ -324,6 +387,9 @@ un proyecto Supabase real:
   formal, panel admin, RLS entre dos clientes distintos (Sprint 1 / 1.5).
 - [`SPRINT_2_QA.md`](./SPRINT_2_QA.md) — buscador NCM, importación de
   catálogo/tributos/intervenciones, validación NCM en el panel PJM.
+- [`SPRINT_3_QA.md`](./SPRINT_3_QA.md) — subida/reemplazo de documentos,
+  checklist operativo, panel PJM (KPIs, filtros, ready-for-quote),
+  comentarios internos vs. visibles, auditoría, notificaciones, RLS.
 
 ## Deploy en Vercel
 
@@ -363,17 +429,20 @@ Checklist rápido de "no hay nada hardcodeado":
 
 ## Próximos pasos sugeridos
 
-- Carga real de documentos al bucket `simulation-documents` (invoice, packing
-  list, BL/AWB, certificado de origen, etc.) con vista previa y checklist
-  conectado a `documents`.
 - Catálogo NCM: soportar XLSX/JSON además de CSV en los importadores
   (`src/lib/ncm/import*.ts`), agregar una tabla `ncm_aliases` para sinónimos
   de búsqueda, y reemplazar la carga manual por una sincronización real con
   ARCA Arancel Integrado cuando haya una fuente estable para consumir.
 - Asignación de especialista aduanero/despachante como rol separado de
-  `admin_pjm`, con permisos más granulares (hoy valida NCM el mismo rol que
-  gestiona todo el panel).
+  `admin_pjm`, con permisos más granulares (hoy valida NCM y gestiona
+  documentos el mismo rol que administra todo el panel).
+- Documentos: OCR/extracción automática de datos de invoice, vencimiento
+  automático de documentos (`status = 'expired'` hoy no lo dispara nada).
 - PDF preliminar con diseño más avanzado (hoy es una vista imprimible desde
-  el navegador) y envío por email.
+  el navegador) y envío por email (los adapters de notificación son
+  in-app únicamente por ahora).
+- Selector de usuario real para "Asignado a" en el panel PJM (hoy sólo hay
+  autoasignación); un endpoint/cron que dispare
+  `expireFormalQuotes`-equivalente para documentos vencidos.
 - Integraciones futuras (fuera de alcance de este MVP): ARCA, Banco Nación /
   MULC, navieras, pagos, IA clasificadora de NCM.

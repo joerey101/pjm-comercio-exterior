@@ -9,6 +9,9 @@ import { mapDbError } from '@/lib/errorMessages';
 import { normalizeNcmCode } from '@/lib/ncm/normalizeNcmCode';
 import { matchTaxParameters, type MatchableTaxParameter } from '@/lib/ncm/matchTaxParameters';
 import { matchInterventionRules, type MatchableInterventionRule } from '@/lib/ncm/matchInterventionRules';
+import { logAuditEvent } from '@/lib/auditLog';
+import { notifyAllAdmins } from '@/lib/notify';
+import { createDefaultChecklistForSimulation } from '@/app/actions/checklist';
 import type { SimulationDraft } from '@/types/simulation';
 import type { TaxParameterRow, InterventionRuleRow } from '@/types/database';
 
@@ -265,12 +268,34 @@ export async function requestFormalQuote(simulationId: string): Promise<{ ok: tr
     .eq('simulation_id', simulationId)
     .maybeSingle();
 
+  let requestId = existingRequest?.id as string | undefined;
   if (!existingRequest) {
-    const { error: requestError } = await supabase
+    const { data: newRequest, error: requestError } = await supabase
       .from('pjm_requests')
-      .insert({ simulation_id: simulationId, status: 'sent_to_pjm' });
+      .insert({ simulation_id: simulationId, status: 'received' })
+      .select('id')
+      .single();
     if (requestError) return { error: mapDbError(requestError.message) };
+    requestId = newRequest.id;
   }
+
+  await createDefaultChecklistForSimulation(simulationId);
+
+  await logAuditEvent({
+    entityType: 'pjm_request',
+    entityId: requestId ?? null,
+    simulationId,
+    requestId: requestId ?? null,
+    userId: user.id,
+    action: 'formal_quote_requested',
+  });
+
+  await notifyAllAdmins({
+    type: 'new_request',
+    title: 'Nueva solicitud recibida',
+    message: `Se envió a revisión una nueva simulación.`,
+    linkUrl: `/admin/solicitudes/${simulationId}`,
+  });
 
   revalidatePath('/dashboard');
   revalidatePath(`/simulaciones/${simulationId}`);

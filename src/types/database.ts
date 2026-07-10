@@ -75,6 +75,9 @@ export interface SimulationRow {
   has_tax_warning: boolean;
   has_intervention_warning: boolean;
   has_blocking_intervention: boolean;
+  checklist_status: string;
+  has_blocking_documents: boolean;
+  has_pending_client_action: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -257,18 +260,32 @@ export interface DocumentRow {
   simulation_id: string;
   document_type: string;
   file_url: string;
+  file_name: string;
+  mime_type: string | null;
+  file_size: number | null;
   status: string;
+  visibility: 'client_visible' | 'internal_only';
+  version_number: number;
+  replaces_document_id: string | null;
+  review_notes: string | null;
+  uploaded_by: string | null;
+  reviewed_by: string | null;
   uploaded_at: string;
   reviewed_at: string | null;
+  updated_at: string;
 }
 
 export interface PjmRequestRow {
   id: string;
   simulation_id: string;
   assigned_to: string | null;
+  assigned_at: string | null;
   status: string;
   priority: string;
   notes: string | null;
+  last_activity_at: string;
+  ready_for_quote_at: string | null;
+  closed_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -276,8 +293,56 @@ export interface PjmRequestRow {
 export interface CommentRow {
   id: string;
   request_id: string;
+  simulation_id: string | null;
+  document_id: string | null;
+  checklist_item_id: string | null;
   user_id: string;
   comment: string;
+  comment_type: string;
   visibility: 'internal' | 'client';
+  created_at: string;
+}
+
+export interface SimulationChecklistItemRow {
+  id: string;
+  simulation_id: string;
+  checklist_key: string;
+  label: string;
+  description: string | null;
+  category: string;
+  status: string;
+  required: boolean;
+  blocking: boolean;
+  completed_by: string | null;
+  completed_at: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AuditLogRow {
+  id: string;
+  entity_type: string;
+  entity_id: string | null;
+  simulation_id: string | null;
+  request_id: string | null;
+  user_id: string | null;
+  action: string;
+  previous_value: unknown;
+  new_value: unknown;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface NotificationRow {
+  id: string;
+  user_id: string;
+  type: string;
+  title: string;
+  message: string;
+  link_url: string | null;
+  read_at: string | null;
   created_at: string;
 }
