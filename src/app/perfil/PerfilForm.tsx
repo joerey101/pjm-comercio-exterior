@@ -94,6 +94,41 @@ export function PerfilForm({ profile, company }: { profile: ProfileRow; company:
         </div>
       </Card>
 
+      <Card step={3} title="Exenciones Impositivas">
+        <p className="text-sm text-slate-500 mb-4">
+          Si tu empresa posee certificados de exención o no retención, marcalo aquí para que el cotizador no calcule estos importes.
+        </p>
+        <div className="space-y-3">
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+            <input
+              type="checkbox"
+              name="exemptIvaAdditional"
+              defaultChecked={company?.exempt_iva_additional ?? false}
+              className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-600"
+            />
+            Exento de IVA Adicional (20%)
+          </label>
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+            <input
+              type="checkbox"
+              name="exemptGanancias"
+              defaultChecked={company?.exempt_ganancias ?? false}
+              className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-600"
+            />
+            Exento de Percepción de Ganancias (6%)
+          </label>
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+            <input
+              type="checkbox"
+              name="exemptIibb"
+              defaultChecked={company?.exempt_iibb ?? false}
+              className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-600"
+            />
+            Exento de Percepción de Ingresos Brutos (2.5%)
+          </label>
+        </div>
+      </Card>
+
       {state?.message && <p className="text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg p-3">{state.message}</p>}
       {state?.error && <p className="text-sm font-medium text-rose-700 bg-rose-50 border border-rose-100 rounded-lg p-3">{state.error}</p>}
 

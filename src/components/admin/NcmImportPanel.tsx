@@ -16,7 +16,7 @@ const IMPORT_FN: Record<ImportJobType, (formData: FormData) => Promise<unknown>>
 
 const COLUMNS: Record<ImportJobType, string> = {
   ncm_catalog: 'code, description, section, chapter, heading, subheading, aec, export_rebate, source, valid_from, valid_to',
-  tax_parameters: 'ncm_code, import_duty, statistical_rate, iva, iva_additional, ganancias, iibb, other_tax, source, valid_from, valid_to',
+  tax_parameters: 'ncm_code, import_duty, statistical_rate, iva, iva_additional, ganancias, iibb, anti_dumping, other_tax, source, valid_from, valid_to',
   intervention_rules: 'ncm_code, chapter, intervention_type, description, severity, source, valid_from, valid_to',
 };
 

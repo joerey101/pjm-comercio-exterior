@@ -37,7 +37,19 @@ export function PublicSimulator() {
     const cargoItems = [{ id: 'preview', name: 'Carga estimada', qty: 1, lengthCm: 100, widthCm: 100, heightCm: (cbm * 1_000_000) / 10_000, weightKg: grossWeight }];
     const rate = transportMode === 'ocean_lcl' ? tariff.oceanLcl : transportMode === 'air' ? tariff.air : transportMode === 'road' ? tariff.road : 0;
     return calculateSimulationSummary({
-      fobValue,
+      // Public simulator has a single representative item
+      items: [{
+        id: 'preview',
+        fobValue,
+        taxRates: {
+          importDuty: ncm.importDuty,
+          statisticalRate: ncm.statisticalRate,
+          iva: ncm.iva,
+          ivaAdditional: ncm.ivaAdditional,
+          ganancias: ncm.ganancias,
+          iibb: ncm.iibb,
+        },
+      }],
       totalUnits: units,
       transportMode,
       incoterm,
@@ -50,14 +62,6 @@ export function PublicSimulator() {
       customsBrokerFee: 250,
       internalFreight: 0,
       otherDefinitiveCosts: 0,
-      taxRates: {
-        importDuty: ncm.importDuty,
-        statisticalRate: ncm.statisticalRate,
-        iva: ncm.iva,
-        ivaAdditional: ncm.ivaAdditional,
-        ganancias: ncm.ganancias,
-        iibb: ncm.iibb,
-      },
     });
   }, [fobValue, units, transportMode, incoterm, cbm, grossWeight, tariff, insurancePercent, ncm]);
 

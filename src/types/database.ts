@@ -29,6 +29,9 @@ export interface CompanyRow {
   import_frequency: string;
   usual_transport_mode: string;
   usual_products: string;
+  exempt_iva_additional: boolean;
+  exempt_ganancias: boolean;
+  exempt_iibb: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -147,6 +150,7 @@ export interface TaxParameterRow {
   iva_additional: number;
   ganancias: number;
   iibb: number;
+  anti_dumping: number;
   other_tax: number;
   base_formula: string;
   source: string | null;

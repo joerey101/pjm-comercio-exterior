@@ -28,6 +28,16 @@ export function InterventionsStep({
 
   return (
     <Card step={4} title="Intervenciones y permisos">
+      {value.notes.includes('Detectado automáticamente') && value.agencies[0] !== 'sin_intervencion' && (
+        <div className="bg-indigo-50 border border-indigo-200 text-indigo-800 text-xs rounded-xl p-3 mb-4 font-medium flex items-start gap-2">
+          <span className="text-indigo-600">✨</span>
+          <span>
+            Basado en la posición NCM seleccionada, hemos pre-seleccionado las intervenciones sugeridas.
+            Podés ajustarlas manualmente si es necesario.
+          </span>
+        </div>
+      )}
+
       <p className="text-xs text-slate-500 mb-4">
         Marcá los organismos que podrían requerir autorización previa para esta mercadería. Este módulo es
         preliminar en el MVP: PJM confirmará las intervenciones reales al revisar tu simulación.

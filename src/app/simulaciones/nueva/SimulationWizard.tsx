@@ -66,7 +66,14 @@ export function SimulationWizard() {
   const summary = useMemo(
     () =>
       calculateSimulationSummary({
-        fobValue,
+        // Each draft item carries its own FOB value; tax rates are wizard-level
+        // (from the selected NCM) and are applied uniformly until the Server Action
+        // resolves per-item rates from the catalog.
+        items: draft.items.map((item, idx) => ({
+          id: String(idx),
+          fobValue: item.quantity * item.unitValue,
+          taxRates: draft.taxRates,
+        })),
         totalUnits: units,
         transportMode: draft.operation.transportMode,
         incoterm: draft.operation.incoterm,
@@ -79,7 +86,6 @@ export function SimulationWizard() {
         customsBrokerFee: draft.logistics.customsBrokerFee,
         internalFreight: draft.logistics.internalFreight,
         otherDefinitiveCosts: draft.logistics.otherDefinitiveCosts,
-        taxRates: draft.taxRates,
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [fobValue, units, draft]

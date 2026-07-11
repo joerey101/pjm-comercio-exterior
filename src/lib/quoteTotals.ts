@@ -1,7 +1,10 @@
+import Decimal from 'decimal.js';
+
 export interface QuoteItemLike {
   quantity: number;
   unitValue: number;
 }
+
 
 export interface QuoteCostLike {
   amount: number;
@@ -23,9 +26,14 @@ export function computeQuoteTotals(
   items: QuoteItemLike[],
   costs: (QuoteCostLike & { category: string })[]
 ): QuoteTotals {
-  const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unitValue, 0);
-  const taxesTotal = costs.filter((c) => c.category === 'taxes').reduce((sum, c) => sum + c.amount, 0);
-  const costsTotal = costs.reduce((sum, c) => sum + c.amount, 0);
-  const total = subtotal + costsTotal;
+  const subtotal = items
+    .reduce((sum, item) => sum.plus(new Decimal(item.quantity).times(item.unitValue)), new Decimal(0))
+    .toNumber();
+  const taxesTotal = costs
+    .filter((c) => c.category === 'taxes')
+    .reduce((sum, c) => sum.plus(c.amount), new Decimal(0))
+    .toNumber();
+  const costsTotal = costs.reduce((sum, c) => sum.plus(c.amount), new Decimal(0)).toNumber();
+  const total = new Decimal(subtotal).plus(costsTotal).toNumber();
   return { subtotal, taxesTotal, total };
 }

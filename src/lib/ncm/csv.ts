@@ -6,7 +6,8 @@
  * README "Próximos pasos".
  */
 export function parseCsv(text: string): Record<string, string>[] {
-  const rows = parseCsvRows(text.replace(/\r\n/g, '\n').replace(/\r/g, '\n'));
+  const cleanText = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const rows = parseCsvRows(cleanText);
   if (rows.length === 0) return [];
 
   const header = rows[0].map((h) => h.trim());
@@ -44,7 +45,7 @@ function parseCsvRows(text: string): string[][] {
 
     if (char === '"') {
       inQuotes = true;
-    } else if (char === ',') {
+    } else if (char === ',' || char === ';') {
       row.push(field);
       field = '';
     } else if (char === '\n') {

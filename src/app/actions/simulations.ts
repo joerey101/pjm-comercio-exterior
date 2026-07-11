@@ -3,8 +3,8 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { requireUser } from '@/lib/dal';
-import { calculateSimulationSummary } from '@/lib/calculations/importCostCalculator';
-import { merchandiseToCargoItem, totalFobValue, totalUnits } from '@/lib/adapters';
+import { calculateSimulationSummary, type SimulationItemInput } from '@/lib/calculations/importCostCalculator';
+import { merchandiseToCargoItem, totalUnits } from '@/lib/adapters';
 import { mapDbError } from '@/lib/errorMessages';
 import { normalizeNcmCode } from '@/lib/ncm/normalizeNcmCode';
 import { matchTaxParameters, type MatchableTaxParameter } from '@/lib/ncm/matchTaxParameters';
@@ -29,45 +29,8 @@ export async function saveSimulation(
   const supabase = await createClient();
   const { draft } = payload;
 
-  const fobValue = totalFobValue(draft.items);
   const units = totalUnits(draft.items);
   const cargoItems = draft.items.map(merchandiseToCargoItem);
-
-  const summary = calculateSimulationSummary({
-    fobValue,
-    totalUnits: units,
-    transportMode: draft.operation.transportMode,
-    incoterm: draft.operation.incoterm,
-    cargoItems,
-    containers: draft.containers,
-    freightRates: {
-      mainFreightRate: draft.logistics.mainFreightRate,
-      bafFsc: draft.logistics.bafFsc,
-      fclRates: undefined,
-    },
-    insurancePercent: draft.logistics.insurancePercent,
-    originLocalCharges: draft.logistics.originLocalCharges,
-    destinationLocalCharges: draft.logistics.destinationLocalCharges,
-    customsBrokerFee: draft.logistics.customsBrokerFee,
-    internalFreight: draft.logistics.internalFreight,
-    otherDefinitiveCosts: draft.logistics.otherDefinitiveCosts,
-    taxRates: draft.taxRates,
-  });
-
-  const { data: company } = await supabase.from('companies').select('id').eq('user_id', user.id).maybeSingle();
-
-  const ncmStatuses = draft.items.map((i) => i.ncmStatus);
-  const overallNcmStatus = ncmStatuses.includes('requiere_revision')
-    ? 'requiere_revision'
-    : ncmStatuses.includes('pendiente_validacion')
-      ? 'pendiente_validacion'
-      : ncmStatuses.includes('propuesto_cliente')
-        ? 'propuesto_cliente'
-        : ncmStatuses.every((s) => s === 'validado_pjm') && ncmStatuses.length > 0
-          ? 'validado_pjm'
-          : 'no_informado';
-
-  const documentStatus = 'incomplete';
 
   // Resolve tax/intervention warnings against the real, active catalog
   // (Sprint 2) for every distinct NCM code used in this simulation.
@@ -76,13 +39,16 @@ export async function saveSimulation(
   let hasInterventionWarning = false;
   let hasBlockingIntervention = false;
 
+  let taxCandidates: MatchableTaxParameter[] = [];
+  let interventionCandidates: MatchableInterventionRule[] = [];
+
   if (distinctCodes.length > 0) {
     const [{ data: taxRows }, { data: ruleRows }] = await Promise.all([
       supabase.from('tax_parameters').select('*').eq('is_active', true).in('normalized_ncm_code', distinctCodes).returns<TaxParameterRow[]>(),
       supabase.from('intervention_rules').select('*').eq('is_active', true).returns<InterventionRuleRow[]>(),
     ]);
 
-    const taxCandidates: MatchableTaxParameter[] = (taxRows ?? []).map((t) => ({
+    taxCandidates = (taxRows ?? []).map((t) => ({
       id: t.id,
       normalizedNcmCode: t.normalized_ncm_code,
       isActive: t.is_active,
@@ -92,9 +58,10 @@ export async function saveSimulation(
       ivaAdditional: t.iva_additional,
       ganancias: t.ganancias,
       iibb: t.iibb,
+      antiDumping: t.anti_dumping,
       otherTax: t.other_tax,
     }));
-    const interventionCandidates: MatchableInterventionRule[] = (ruleRows ?? []).map((r) => ({
+    interventionCandidates = (ruleRows ?? []).map((r) => ({
       id: r.id,
       normalizedNcmCode: r.normalized_ncm_code,
       chapter: r.chapter,
@@ -112,7 +79,82 @@ export async function saveSimulation(
     }
   }
 
+  // Build per-item inputs with NCM-specific tax rates from the catalog.
+  // Falls back to draft.taxRates (wizard-level) if no catalog match for the item's NCM.
+  const itemInputs: SimulationItemInput[] = draft.items.map((item, idx) => {
+    const normalizedCode = normalizeNcmCode(item.ncmCode);
+    let taxRates = draft.taxRates;
+
+    if (normalizedCode) {
+      const match = matchTaxParameters(normalizedCode, taxCandidates);
+      if (match) {
+        taxRates = {
+          importDuty: match.importDuty,
+          statisticalRate: match.statisticalRate,
+          iva: match.iva,
+          ivaAdditional: match.ivaAdditional,
+          ganancias: match.ganancias,
+          iibb: match.iibb,
+        };
+      }
+    }
+
+    return {
+      id: item.id ?? `item-${idx}`,
+      fobValue: item.quantity * item.unitValue,
+      taxRates,
+    };
+  });
+
+  const { data: company } = await supabase
+    .from('companies')
+    .select('id, exempt_iva_additional, exempt_ganancias, exempt_iibb')
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  const summary = calculateSimulationSummary({
+    items: itemInputs,
+    totalUnits: units,
+    transportMode: draft.operation.transportMode,
+    incoterm: draft.operation.incoterm,
+    cargoItems,
+    containers: draft.containers,
+    freightRates: {
+      mainFreightRate: draft.logistics.mainFreightRate,
+      bafFsc: draft.logistics.bafFsc,
+      fclRates: undefined,
+    },
+    insurancePercent: draft.logistics.insurancePercent,
+    originLocalCharges: draft.logistics.originLocalCharges,
+    destinationLocalCharges: draft.logistics.destinationLocalCharges,
+    customsBrokerFee: draft.logistics.customsBrokerFee,
+    internalFreight: draft.logistics.internalFreight,
+    otherDefinitiveCosts: draft.logistics.otherDefinitiveCosts,
+    companyTaxExemptions: {
+      exemptIvaAdditional: company?.exempt_iva_additional ?? false,
+      exemptGanancias: company?.exempt_ganancias ?? false,
+      exemptIibb: company?.exempt_iibb ?? false,
+    },
+  });
+
+  // Derived values used in the simulation row
+  const fobValue = itemInputs.reduce((sum, item) => sum + item.fobValue, 0);
+
+  const ncmStatuses = draft.items.map((i) => i.ncmStatus);
+  const overallNcmStatus = ncmStatuses.includes('requiere_revision')
+    ? 'requiere_revision'
+    : ncmStatuses.includes('pendiente_validacion')
+      ? 'pendiente_validacion'
+      : ncmStatuses.includes('propuesto_cliente')
+        ? 'propuesto_cliente'
+        : ncmStatuses.every((s) => s === 'validado_pjm') && ncmStatuses.length > 0
+          ? 'validado_pjm'
+          : 'no_informado';
+
+  const documentStatus = 'incomplete';
+
   const hasNcmWarning = ncmStatuses.some((s) => s === 'no_informado' || s === 'propuesto_cliente' || s === 'requiere_revision');
+
 
   const simulationRow = {
     user_id: user.id,
@@ -150,7 +192,7 @@ export async function saveSimulation(
     status: payload.asCompleted ? 'completed' : 'draft',
     ncm_status: overallNcmStatus,
     document_status: documentStatus,
-    raw_data: draft as unknown as Record<string, unknown>,
+    raw_data: { ...(draft as unknown as Record<string, unknown>), itemBreakdown: summary.itemBreakdown },
     has_ncm_warning: hasNcmWarning,
     has_tax_warning: hasTaxWarning,
     has_intervention_warning: hasInterventionWarning,

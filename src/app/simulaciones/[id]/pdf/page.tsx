@@ -101,17 +101,19 @@ export default async function SimulationPdfPage({ params }: { params: Promise<{ 
               </tr>
             </thead>
             <tbody>
-              {(items ?? []).map((item) => (
-                <tr key={item.id} className="border-b border-slate-100">
-                  <td className="py-1.5">{item.description}</td>
-                  <td className="py-1.5">
-                    {item.ncm_code || 'No informado'} ·{' '}
-                    {NCM_STATUS_LABELS[item.ncm_status as NCMStatus] ?? item.ncm_status}
-                  </td>
-                  <td className="py-1.5 text-right">{item.quantity}</td>
-                  <td className="py-1.5 text-right">{formatMoney(item.total_value, simulation.currency)}</td>
-                </tr>
-              ))}
+              {(items ?? []).map((item) => {
+                return (
+                  <tr key={item.id} className="border-b border-slate-100">
+                    <td className="py-1.5">{item.description}</td>
+                    <td className="py-1.5">
+                      {item.ncm_code || 'No informado'} ·{' '}
+                      {NCM_STATUS_LABELS[item.ncm_status as NCMStatus] ?? item.ncm_status}
+                    </td>
+                    <td className="py-1.5 text-right">{item.quantity}</td>
+                    <td className="py-1.5 text-right">{formatMoney(item.total_value, simulation.currency)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

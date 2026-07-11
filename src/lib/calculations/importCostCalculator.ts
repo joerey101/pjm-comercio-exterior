@@ -15,8 +15,14 @@
  * 16%), matching the original prototype's input convention.
  */
 
+import Decimal from 'decimal.js';
 import type { CargoItem, ContainerSelection, TransportMode } from '@/types/logistics';
 import type { Incoterm } from '@/types/simulation';
+
+// Configure Decimal for monetary precision: 20 significant digits, ROUND_HALF_UP.
+// Rounding to 2 decimal places happens ONLY at the output boundary of
+// calculateSimulationSummary — never in intermediate calculations.
+Decimal.set({ precision: 20, rounding: Decimal.ROUND_HALF_UP });
 
 // ---------------------------------------------------------------------------
 // Cargo / chargeable weight
@@ -126,8 +132,8 @@ export function calculateInternationalFreight(
 
 /** Insurance premium in USD. Minimum flat premium of 50 USD, as in the original prototype. */
 export function calculateInsurance(fobValue: number, freight: number, insurancePercent: number): number {
-  const insurance = (fobValue + freight) * (insurancePercent / 100);
-  return Math.max(insurance, 50);
+  const insurance = new Decimal(fobValue).plus(freight).times(new Decimal(insurancePercent).dividedBy(100));
+  return Decimal.max(insurance, 50).toNumber();
 }
 
 // ---------------------------------------------------------------------------
@@ -215,47 +221,47 @@ export function getIncotermResponsibility(incoterm: Incoterm): IncotermResponsib
 
 /** CIF = FOB + flete internacional + seguro */
 export function calculateCIF(fobValue: number, freight: number, insurance: number): number {
-  return fobValue + freight + insurance;
+  return new Decimal(fobValue).plus(freight).plus(insurance).toNumber();
 }
 
 /** DIE = CIF * derecho_importacion */
 export function calculateCustomsDuty(cif: number, importDutyPercent: number): number {
-  return cif * (importDutyPercent / 100);
+  return new Decimal(cif).times(new Decimal(importDutyPercent).dividedBy(100)).toNumber();
 }
 
 /** Tasa estadística = CIF * tasa_estadistica */
 export function calculateStatisticalRate(cif: number, statisticalRatePercent: number): number {
-  return cif * (statisticalRatePercent / 100);
+  return new Decimal(cif).times(new Decimal(statisticalRatePercent).dividedBy(100)).toNumber();
 }
 
 /** Base IVA = CIF + DIE + tasa_estadistica */
 export function calculateVATBase(cif: number, customsDuty: number, statisticalRate: number): number {
-  return cif + customsDuty + statisticalRate;
+  return new Decimal(cif).plus(customsDuty).plus(statisticalRate).toNumber();
 }
 
 /** IVA = Base IVA * alicuota_iva */
 export function calculateVAT(vatBase: number, ivaPercent: number): number {
-  return vatBase * (ivaPercent / 100);
+  return new Decimal(vatBase).times(new Decimal(ivaPercent).dividedBy(100)).toNumber();
 }
 
 /** IVA adicional = Base IVA * iva_adicional */
 export function calculateVATAdditional(vatBase: number, ivaAdditionalPercent: number): number {
-  return vatBase * (ivaAdditionalPercent / 100);
+  return new Decimal(vatBase).times(new Decimal(ivaAdditionalPercent).dividedBy(100)).toNumber();
 }
 
 /** Ganancias = Base IVA * percepcion_ganancias */
 export function calculateGananciasPerception(vatBase: number, gananciasPercent: number): number {
-  return vatBase * (gananciasPercent / 100);
+  return new Decimal(vatBase).times(new Decimal(gananciasPercent).dividedBy(100)).toNumber();
 }
 
 /** IIBB = Base IVA * percepcion_iibb */
 export function calculateIIBBPerception(vatBase: number, iibbPercent: number): number {
-  return vatBase * (iibbPercent / 100);
+  return new Decimal(vatBase).times(new Decimal(iibbPercent).dividedBy(100)).toNumber();
 }
 
 /** Créditos fiscales = IVA + IVA adicional + Ganancias + IIBB */
 export function calculateFiscalCredits(iva: number, ivaAdditional: number, ganancias: number, iibb: number): number {
-  return iva + ivaAdditional + ganancias + iibb;
+  return new Decimal(iva).plus(ivaAdditional).plus(ganancias).plus(iibb).toNumber();
 }
 
 export interface DefinitiveCostInput {
@@ -274,35 +280,83 @@ export interface DefinitiveCostInput {
  * + despacho + flete interno + otros costos definitivos
  */
 export function calculateDefinitiveCost(input: DefinitiveCostInput): number {
-  return (
-    input.freight +
-    input.insurance +
-    input.localExpenses +
-    input.customsDuty +
-    input.statisticalRate +
-    input.customsBrokerFee +
-    input.internalFreight +
-    input.otherDefinitiveCosts
-  );
+  return new Decimal(input.freight)
+    .plus(input.insurance)
+    .plus(input.localExpenses)
+    .plus(input.customsDuty)
+    .plus(input.statisticalRate)
+    .plus(input.customsBrokerFee)
+    .plus(input.internalFreight)
+    .plus(input.otherDefinitiveCosts)
+    .toNumber();
 }
 
 /** Caja necesaria = costo definitivo + créditos fiscales */
 export function calculateCashRequired(definitiveCost: number, fiscalCredits: number): number {
-  return definitiveCost + fiscalCredits;
+  return new Decimal(definitiveCost).plus(fiscalCredits).toNumber();
 }
 
 /** Costo unitario = caja necesaria / cantidad de unidades */
 export function calculateUnitCost(cashRequired: number, totalUnits: number): number {
   if (!totalUnits || totalUnits <= 0) return 0;
-  return cashRequired / totalUnits;
+  return new Decimal(cashRequired).dividedBy(totalUnits).toNumber();
 }
 
 // ---------------------------------------------------------------------------
 // Full simulation summary (aggregate entry point used by the wizard/API)
 // ---------------------------------------------------------------------------
 
-export interface SimulationCalculationInput {
+/**
+ * Input for a single product item in a simulation.
+ * Each item carries its own FOB value and NCM-specific tax rates so that
+ * multi-item simulations can apply the correct alícuota per NCM code.
+ */
+export interface SimulationItemInput {
+  /** Item identifier for traceability (maps to simulation_items.id). */
+  id: string;
+  /** Total FOB value of this item (quantity × unit_value). */
   fobValue: number;
+  /**
+   * NCM-specific tax rates for this item, expressed as percentages
+   * (e.g. 16 for 16%). Source: tax_parameters row matched to the item's NCM.
+   */
+  taxRates: {
+    importDuty: number;
+    statisticalRate: number;
+    iva: number;
+    ivaAdditional: number;
+    ganancias: number;
+    iibb: number;
+  };
+}
+
+/** Per-item tax breakdown — exposed in the result for future UI use. */
+export interface SimulationItemBreakdown {
+  itemId: string;
+  fobValue: number;
+  /** Freight prorated to this item by FOB proportion. */
+  freightProrated: number;
+  /** Insurance prorated to this item by FOB proportion. */
+  insuranceProrated: number;
+  cif: number;
+  customsDuty: number;
+  statisticalRate: number;
+  vatBase: number;
+  iva: number;
+  ivaAdditional: number;
+  ganancias: number;
+  iibb: number;
+  fiscalCredits: number;
+}
+
+export interface SimulationCalculationInput {
+  /**
+   * One entry per product/NCM. Each item carries its own FOB value and
+   * tax rates so that multi-NCM simulations calculate correctly.
+   * For single-item simulations the result is identical to the former
+   * aggregate calculation.
+   */
+  items: SimulationItemInput[];
   totalUnits: number;
   transportMode: TransportMode;
   incoterm: Incoterm;
@@ -315,13 +369,10 @@ export interface SimulationCalculationInput {
   customsBrokerFee: number;
   internalFreight: number;
   otherDefinitiveCosts: number;
-  taxRates: {
-    importDuty: number;
-    statisticalRate: number;
-    iva: number;
-    ivaAdditional: number;
-    ganancias: number;
-    iibb: number;
+  companyTaxExemptions?: {
+    exemptIvaAdditional: boolean;
+    exemptGanancias: boolean;
+    exemptIibb: boolean;
   };
 }
 
@@ -345,28 +396,94 @@ export interface SimulationCalculationResult {
   unitCost: number;
   logisticsCostOverFobPercent: number;
   taxesOverCifPercent: number;
+  /** Per-item breakdown for UI/PDF use. Aggregates above are the sum of these. */
+  itemBreakdown: SimulationItemBreakdown[];
 }
 
+/**
+ * Computes the full simulation cost breakdown.
+ *
+ * Freight and insurance are calculated for the whole shipment, then prorated
+ * to each item by its proportion of the total FOB value (the standard
+ * criterion for nationalization cost allocation). Each item's tributos are
+ * then calculated using its own NCM-specific alícuotas from the tax catalog.
+ * Aggregated totals (cif, customsDuty, etc.) are the sum across all items,
+ * keeping the result backward-compatible with the UI that reads top-level fields.
+ *
+ * Single-item simulations produce mathematically identical results to the
+ * former aggregate calculation.
+ */
 export function calculateSimulationSummary(input: SimulationCalculationInput): SimulationCalculationResult {
   const cargoSummary = calculateCargoSummary(input.transportMode, input.cargoItems, input.containers);
   const incotermResponsibility = getIncotermResponsibility(input.incoterm);
 
+  // Total FOB across all items (using Decimal to avoid float accumulation)
+  const totalFob = input.items
+    .reduce((acc, item) => acc.plus(item.fobValue), new Decimal(0))
+    .toNumber();
+
+  // Freight and insurance are for the whole shipment
   const freight = calculateInternationalFreight(input.transportMode, cargoSummary, input.containers, input.freightRates);
-  const insurance = calculateInsurance(input.fobValue, freight, input.insurancePercent);
-  const cif = calculateCIF(input.fobValue, freight, insurance);
+  const insurance = calculateInsurance(totalFob, freight, input.insurancePercent);
 
-  const customsDuty = calculateCustomsDuty(cif, input.taxRates.importDuty);
-  const statisticalRate = calculateStatisticalRate(cif, input.taxRates.statisticalRate);
-  const vatBase = calculateVATBase(cif, customsDuty, statisticalRate);
+  // Per-item breakdown: prorate freight/insurance by FOB proportion, then
+  // apply each item's own tax rates.
+  // Prorrateo criterion: freightItem = freight × (fobItem / totalFobTotal)
+  // If totalFob is 0, distribute equally (edge case: all items at $0 FOB).
+  const itemCount = input.items.length || 1;
+  const itemBreakdown: SimulationItemBreakdown[] = input.items.map((item) => {
+    const proportion = totalFob > 0
+      ? new Decimal(item.fobValue).dividedBy(totalFob)
+      : new Decimal(1).dividedBy(itemCount);
 
-  const iva = calculateVAT(vatBase, input.taxRates.iva);
-  const ivaAdditional = calculateVATAdditional(vatBase, input.taxRates.ivaAdditional);
-  const ganancias = calculateGananciasPerception(vatBase, input.taxRates.ganancias);
-  const iibb = calculateIIBBPerception(vatBase, input.taxRates.iibb);
-  const fiscalCredits = calculateFiscalCredits(iva, ivaAdditional, ganancias, iibb);
+    const freightProrated = new Decimal(freight).times(proportion).toNumber();
+    const insuranceProrated = new Decimal(insurance).times(proportion).toNumber();
 
-  const localExpenses =
-    input.originLocalCharges + input.destinationLocalCharges + (input.freightRates.bafFsc ?? 0);
+    const cif = calculateCIF(item.fobValue, freightProrated, insuranceProrated);
+    const customsDuty = calculateCustomsDuty(cif, item.taxRates.importDuty);
+    const statisticalRate = calculateStatisticalRate(cif, item.taxRates.statisticalRate);
+    const vatBase = calculateVATBase(cif, customsDuty, statisticalRate);
+    const iva = calculateVAT(vatBase, item.taxRates.iva);
+    const ivaAdditional = input.companyTaxExemptions?.exemptIvaAdditional ? 0 : calculateVATAdditional(vatBase, item.taxRates.ivaAdditional);
+    const ganancias = input.companyTaxExemptions?.exemptGanancias ? 0 : calculateGananciasPerception(vatBase, item.taxRates.ganancias);
+    const iibb = input.companyTaxExemptions?.exemptIibb ? 0 : calculateIIBBPerception(vatBase, item.taxRates.iibb);
+    const fiscalCredits = calculateFiscalCredits(iva, ivaAdditional, ganancias, iibb);
+
+    return {
+      itemId: item.id,
+      fobValue: item.fobValue,
+      freightProrated,
+      insuranceProrated,
+      cif,
+      customsDuty,
+      statisticalRate,
+      vatBase,
+      iva,
+      ivaAdditional,
+      ganancias,
+      iibb,
+      fiscalCredits,
+    };
+  });
+
+  // Sum aggregates from per-item breakdowns using Decimal for precision
+  const sumField = (field: keyof Omit<SimulationItemBreakdown, 'itemId'>) =>
+    itemBreakdown.reduce((acc, b) => acc.plus(b[field]), new Decimal(0)).toNumber();
+
+  const cif = sumField('cif');
+  const customsDuty = sumField('customsDuty');
+  const statisticalRate = sumField('statisticalRate');
+  const vatBase = sumField('vatBase');
+  const iva = sumField('iva');
+  const ivaAdditional = sumField('ivaAdditional');
+  const ganancias = sumField('ganancias');
+  const iibb = sumField('iibb');
+  const fiscalCredits = sumField('fiscalCredits');
+
+  const localExpenses = new Decimal(input.originLocalCharges)
+    .plus(input.destinationLocalCharges)
+    .plus(input.freightRates.bafFsc ?? 0)
+    .toNumber();
 
   const definitiveCost = calculateDefinitiveCost({
     freight,
@@ -382,28 +499,39 @@ export function calculateSimulationSummary(input: SimulationCalculationInput): S
   const cashRequired = calculateCashRequired(definitiveCost, fiscalCredits);
   const unitCost = calculateUnitCost(cashRequired, input.totalUnits);
 
-  const logisticsCostOverFobPercent = input.fobValue > 0 ? ((freight + localExpenses) / input.fobValue) * 100 : 0;
-  const taxesOverCifPercent = cif > 0 ? ((customsDuty + statisticalRate + fiscalCredits) / cif) * 100 : 0;
+  const logisticsCostOverFobPercent =
+    totalFob > 0
+      ? new Decimal(freight).plus(localExpenses).dividedBy(totalFob).times(100).toNumber()
+      : 0;
+  const taxesOverCifPercent =
+    cif > 0
+      ? new Decimal(customsDuty).plus(statisticalRate).plus(fiscalCredits).dividedBy(cif).times(100).toNumber()
+      : 0;
+
+  // Round all monetary outputs to 2 decimal places at the output boundary.
+  // This is the ONLY place rounding occurs — never in intermediate steps.
+  const round2 = (n: number) => new Decimal(n).toDecimalPlaces(2).toNumber();
 
   return {
     cargoSummary,
     incotermResponsibility,
-    freight,
-    insurance,
-    cif,
-    customsDuty,
-    statisticalRate,
-    vatBase,
-    iva,
-    ivaAdditional,
-    ganancias,
-    iibb,
-    fiscalCredits,
-    localExpenses,
-    definitiveCost,
-    cashRequired,
-    unitCost,
-    logisticsCostOverFobPercent,
-    taxesOverCifPercent,
+    freight: round2(freight),
+    insurance: round2(insurance),
+    cif: round2(cif),
+    customsDuty: round2(customsDuty),
+    statisticalRate: round2(statisticalRate),
+    vatBase: round2(vatBase),
+    iva: round2(iva),
+    ivaAdditional: round2(ivaAdditional),
+    ganancias: round2(ganancias),
+    iibb: round2(iibb),
+    fiscalCredits: round2(fiscalCredits),
+    localExpenses: round2(localExpenses),
+    definitiveCost: round2(definitiveCost),
+    cashRequired: round2(cashRequired),
+    unitCost: round2(unitCost),
+    logisticsCostOverFobPercent: round2(logisticsCostOverFobPercent),
+    taxesOverCifPercent: round2(taxesOverCifPercent),
+    itemBreakdown,
   };
 }

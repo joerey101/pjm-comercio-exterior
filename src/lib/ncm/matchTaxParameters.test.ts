@@ -12,6 +12,7 @@ const CANDIDATES: MatchableTaxParameter[] = [
     ivaAdditional: 10,
     ganancias: 6,
     iibb: 2.5,
+    antiDumping: 0,
     otherTax: 0,
   },
   {
@@ -24,6 +25,7 @@ const CANDIDATES: MatchableTaxParameter[] = [
     ivaAdditional: 20,
     ganancias: 6,
     iibb: 2.5,
+    antiDumping: 0,
     otherTax: 0,
   },
 ];

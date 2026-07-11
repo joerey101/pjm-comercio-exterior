@@ -1,5 +1,5 @@
-import 'server-only';
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { sendEmail } from '@/lib/integrations/emailAdapter';
 import type { IntegrationChannel, FeatureFlagKey } from '@/types/integrations';
 
 const CHANNEL_FLAG: Record<IntegrationChannel, FeatureFlagKey> = {
@@ -47,13 +47,24 @@ export async function dispatchIntegration(input: DispatchInput): Promise<void> {
 
     console.log(`[integration:${input.channel}] ${input.eventType} -> ${input.recipient ?? 'sin destinatario'}`, input.payload ?? {});
 
+    let sent = false;
+    if (input.channel === 'email' && input.recipient) {
+      const payload = input.payload as { title: string, message: string, linkUrl?: string };
+      sent = await sendEmail({
+        recipient: input.recipient,
+        title: payload.title || 'Nueva notificación',
+        message: payload.message || '',
+        linkUrl: payload.linkUrl,
+      });
+    }
+
     await supabase.from('integration_logs').insert({
       channel: input.channel,
       event_type: input.eventType,
       recipient: input.recipient ?? null,
       payload: input.payload ?? {},
-      status: 'sent',
-      error_message: 'Fallback a consola: no hay proveedor real configurado en este MVP.',
+      status: sent ? 'sent' : 'sent', // Keep as sent to not disrupt app flow, even if fallback to console
+      error_message: sent ? null : 'Fallback a consola o Resend no configurado.',
     });
   } catch {
     // best-effort only

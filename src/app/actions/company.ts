@@ -26,6 +26,9 @@ export async function updateCompany(_state: CompanyFormState, formData: FormData
     import_frequency: String(formData.get('importFrequency') ?? ''),
     usual_transport_mode: String(formData.get('usualTransportMode') ?? ''),
     usual_products: String(formData.get('usualProducts') ?? ''),
+    exempt_iva_additional: formData.get('exemptIvaAdditional') === 'on',
+    exempt_ganancias: formData.get('exemptGanancias') === 'on',
+    exempt_iibb: formData.get('exemptIibb') === 'on',
   };
 
   const { data: existing, error: fetchError } = await supabase

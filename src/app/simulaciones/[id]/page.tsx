@@ -20,6 +20,8 @@ import { ChecklistPanel } from '@/components/checklist/ChecklistPanel';
 import { CommentThread } from '@/components/comments/CommentThread';
 import { QuoteSummaryCard } from '@/components/quotes/QuoteSummaryCard';
 import { QuoteResponseForm } from '@/components/quotes/QuoteResponseForm';
+import { ItemBreakdownTable } from '@/components/simulation/ItemBreakdownTable';
+import type { SimulationItemBreakdown } from '@/lib/calculations/importCostCalculator';
 import type { FormalQuoteRow } from '@/types/database';
 
 export default async function SimulationDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -53,6 +55,7 @@ export default async function SimulationDetailPage({ params }: { params: Promise
 
   const risk = DOCUMENT_STATUS_RISK[simulation.document_status as SimulationDocumentStatus] ?? 'rojo';
   const canRequestQuote = simulation.status === 'draft' || simulation.status === 'completed';
+  const breakdown = (simulation.raw_data as Record<string, unknown>)?.itemBreakdown as SimulationItemBreakdown[] | undefined;
 
   const resumen = (
     <>
@@ -88,31 +91,8 @@ export default async function SimulationDetailPage({ params }: { params: Promise
       </div>
 
       <div className="bg-white border border-slate-200 rounded-2xl p-6 mb-8">
-        <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wide mb-4">Mercadería</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="text-[11px] font-bold text-slate-500 uppercase border-b border-slate-200">
-              <tr>
-                <th className="py-2 pr-3">Descripción</th>
-                <th className="py-2 pr-3">NCM</th>
-                <th className="py-2 pr-3 text-right">Cantidad</th>
-                <th className="py-2 pr-3 text-right">Valor unitario</th>
-                <th className="py-2 pr-3 text-right">Valor total</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {(items ?? []).map((item) => (
-                <tr key={item.id}>
-                  <td className="py-2 pr-3 font-medium text-slate-700">{item.description}</td>
-                  <td className="py-2 pr-3 text-slate-500">{item.ncm_code || '—'}</td>
-                  <td className="py-2 pr-3 text-right">{item.quantity}</td>
-                  <td className="py-2 pr-3 text-right">{formatMoney(item.unit_value, simulation.currency)}</td>
-                  <td className="py-2 pr-3 text-right font-semibold">{formatMoney(item.total_value, simulation.currency)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wide mb-4">Mercadería y Costos por Ítem</h2>
+        <ItemBreakdownTable items={items ?? []} breakdown={breakdown} currency={simulation.currency} />
       </div>
 
       <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-8 text-xs sm:text-sm text-amber-800">

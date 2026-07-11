@@ -87,6 +87,7 @@ export interface NcmTaxAndInterventionDto {
     ivaAdditional: number;
     ganancias: number;
     iibb: number;
+    antiDumping: number;
     otherTax: number;
     source: string | null;
     validFrom: string | null;
@@ -126,6 +127,7 @@ export async function getTaxAndInterventionsForNcm(ncmCode: string): Promise<Ncm
     ivaAdditional: t.iva_additional,
     ganancias: t.ganancias,
     iibb: t.iibb,
+    antiDumping: t.anti_dumping,
     otherTax: t.other_tax,
   }));
   const tax = matchTaxParameters(ncmCode, taxCandidates);
@@ -152,6 +154,7 @@ export async function getTaxAndInterventionsForNcm(ncmCode: string): Promise<Ncm
           ivaAdditional: taxRow.iva_additional,
           ganancias: taxRow.ganancias,
           iibb: taxRow.iibb,
+          antiDumping: taxRow.anti_dumping,
           otherTax: taxRow.other_tax,
           source: taxRow.source,
           validFrom: taxRow.valid_from,

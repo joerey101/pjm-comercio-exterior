@@ -11,6 +11,7 @@ export interface ParsedTaxParameterRow {
   ivaAdditional: number;
   ganancias: number;
   iibb: number;
+  antiDumping: number;
   otherTax: number;
   source: string | null;
   validFrom: string | null;
@@ -47,6 +48,7 @@ export function parseTaxParametersCsv(text: string): ImportParseResult<ParsedTax
       ['iva_additional', record.iva_additional ?? ''],
       ['ganancias', record.ganancias ?? ''],
       ['iibb', record.iibb ?? ''],
+      ['anti_dumping', record.anti_dumping ?? ''],
     ];
     const parsedNumbers: Record<string, number> = {};
     let hasNumericError = false;
@@ -70,6 +72,7 @@ export function parseTaxParametersCsv(text: string): ImportParseResult<ParsedTax
       ivaAdditional: parsedNumbers.iva_additional,
       ganancias: parsedNumbers.ganancias,
       iibb: parsedNumbers.iibb,
+      antiDumping: parsedNumbers.anti_dumping,
       otherTax: toNumberOrNull(record.other_tax) ?? 0,
       source: record.source?.trim() || null,
       validFrom: toDateOrNull(record.valid_from),

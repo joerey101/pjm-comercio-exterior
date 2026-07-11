@@ -240,8 +240,8 @@ export async function issueQuote(quoteId: string, simulationId: string): Promise
     await notifyUser({
       userId: simulation.user_id,
       type: 'formal_quote_issued',
-      title: 'Tu cotización formal está lista',
-      message: `${simulation.name}: cotización ${quoteNumber} disponible para tu revisión.`,
+      title: 'Cotización Formal Emitida',
+      message: `Ya tenés tu cotización formal para la simulación ${simulation.name}. Podés descargar el PDF y revisar el detalle completo en la plataforma.`,
       linkUrl: `/simulaciones/${simulationId}`,
     });
   }

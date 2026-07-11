@@ -10,6 +10,7 @@ export interface MatchableTaxParameter {
   ivaAdditional: number;
   ganancias: number;
   iibb: number;
+  antiDumping: number;
   otherTax: number;
 }
 
